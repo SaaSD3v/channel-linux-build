@@ -95,7 +95,7 @@ echo "::endgroup::"
 
 echo "::group::Generate small Debian initramfs"
 sudo tee "$ROOTFS/etc/initramfs-tools/initramfs.conf" >/dev/null <<'EOF'
-MODULES=dep
+MODULES=list
 BUSYBOX=y
 KEYMAP=n
 COMPRESS=gzip
@@ -104,7 +104,8 @@ NFSROOT=auto
 RUNSIZE=10%
 EOF
 
-# Storage and ext4 are intentionally required built-in by build-kernel.sh.
+# Storage and ext4 are intentionally required built-in by the kernel config.
+# MODULES=list avoids probing the x86 GitHub runner from inside the arm64 chroot.
 # Do not force built-in drivers into initramfs-tools' module list.
 sudo tee "$ROOTFS/etc/initramfs-tools/modules" >/dev/null <<'EOF'
 # channel: no forced modules; critical root-storage drivers are built into the kernel
