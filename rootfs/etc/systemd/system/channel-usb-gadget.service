@@ -1,7 +1,6 @@
 [Unit]
 Description=Moto G7 Play USB RNDIS gadget for headless SSH
-DefaultDependencies=no
-After=systemd-modules-load.service sys-kernel-config.mount
+After=systemd-modules-load.service sys-kernel-config.mount local-fs.target
 Wants=sys-kernel-config.mount
 Before=network.target ssh.service channel-dhcp.service
 
