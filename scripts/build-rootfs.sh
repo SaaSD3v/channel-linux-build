@@ -76,14 +76,10 @@ NFSROOT=auto
 RUNSIZE=10%
 EOF
 
-# Storage is intentionally forced built-in by the kernel config fragment.
-# Keep explicit names here as a fallback if a tree turns any of them into modules.
+# Storage and ext4 are intentionally required built-in by build-kernel.sh.
+# Do not force built-in drivers into initramfs-tools' module list.
 sudo tee "$ROOTFS/etc/initramfs-tools/modules" >/dev/null <<'EOF'
-mmc_block
-sdhci
-sdhci-pltfm
-sdhci-msm
-ext4
+# channel: no forced modules; critical root-storage drivers are built into the kernel
 EOF
 
 sudo update-binfmts --enable qemu-aarch64 || true
