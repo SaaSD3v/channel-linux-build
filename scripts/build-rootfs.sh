@@ -60,8 +60,16 @@ sudo sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "$ROOTFS/etc/shadow"
 unset RANDOM_PASSWORD ROOT_HASH
 
 sudo ssh-keygen -A -f "$ROOTFS"
+
+# Keep SSH under ssh.service control. Debian also ships ssh.socket, which
+# listens independently from sshd's ListenAddress when explicitly enabled.
+sudo systemctl --root="$ROOTFS" disable ssh.socket 2>/dev/null || true
 sudo systemctl --root="$ROOTFS" disable dnsmasq.service 2>/dev/null || true
 sudo systemctl --root="$ROOTFS" enable channel-usb-gadget.service channel-dhcp.service ssh.service
+
+# This device is intentionally headless. Persist the journal so boot/USB
+# failures can be inspected by mounting the microSD on another machine.
+sudo mkdir -p "$ROOTFS/var/log/journal"
 echo "::endgroup::"
 
 echo "::group::Install mainline kernel modules"
@@ -118,6 +126,9 @@ sudo mount --bind /dev "$ROOTFS/dev"
 sudo mount -t proc proc "$ROOTFS/proc"
 sudo mount -t sysfs sysfs "$ROOTFS/sys"
 
+# Validate the target daemon with the target arm64 userspace before sealing
+# the image. This catches bad sshd_config snippets and missing host keys.
+sudo chroot "$ROOTFS" /usr/sbin/sshd -t
 sudo chroot "$ROOTFS" /bin/sh -c "depmod '$KREL'; update-initramfs -c -k '$KREL'"
 
 cleanup_mounts
