@@ -10,7 +10,8 @@ permissions:
 
 concurrency:
   group: channel-mainline-build
-  cancel-in-progress: true
+  # Preserve an expensive in-progress kernel build; newer pushes queue instead.
+  cancel-in-progress: false
 
 env:
   KERNEL_URL: https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git
