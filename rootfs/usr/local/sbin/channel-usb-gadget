@@ -63,7 +63,7 @@ printf '250' > configs/c.1/MaxPower
 mkdir -p functions/rndis.usb0
 printf '02:00:00:00:42:01' > functions/rndis.usb0/dev_addr
 printf '02:00:00:00:42:02' > functions/rndis.usb0/host_addr
-printf 'usb%%d' > functions/rndis.usb0/ifname
+if [ -e functions/rndis.usb0/ifname ]; then\n    printf 'usb%%d' > functions/rndis.usb0/ifname\nfi
 
 # Interface-level Microsoft compatible ID.
 if [ -d functions/rndis.usb0/os_desc/interface.rndis ]; then
