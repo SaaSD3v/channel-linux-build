@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${KERNEL_DIR:?set KERNEL_DIR}"
 : "${KERNEL_RELEASE:?set KERNEL_RELEASE}"
 : "${OUT_DIR:?set OUT_DIR}"
+
+KERNEL_DIR="${KERNEL_DIR:-}"
+KERNEL_MODULES_ARCHIVE="${KERNEL_MODULES_ARCHIVE:-}"
+KERNEL_CONFIG_FILE="${KERNEL_CONFIG_FILE:-}"
+KERNEL_SYSTEM_MAP_FILE="${KERNEL_SYSTEM_MAP_FILE:-}"
+
+if [ -z "$KERNEL_MODULES_ARCHIVE" ] && [ -z "$KERNEL_DIR" ]; then
+  echo "set KERNEL_MODULES_ARCHIVE or KERNEL_DIR" >&2
+  exit 2
+fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK_DIR="${WORK_DIR:-$REPO_ROOT/.work}"
@@ -56,11 +65,22 @@ sudo systemctl --root="$ROOTFS" enable channel-usb-gadget.service channel-dhcp.s
 echo "::endgroup::"
 
 echo "::group::Install mainline kernel modules"
-sudo env PATH="$PATH" make -C "$KERNEL_DIR" ARCH=arm64 INSTALL_MOD_PATH="$ROOTFS" modules_install
+if [ -n "$KERNEL_MODULES_ARCHIVE" ]; then
+  test -s "$KERNEL_MODULES_ARCHIVE"
+  sudo tar -I zstd -xf "$KERNEL_MODULES_ARCHIVE" -C "$ROOTFS"
+else
+  sudo env PATH="$PATH" make -C "$KERNEL_DIR" ARCH=arm64 INSTALL_MOD_PATH="$ROOTFS" modules_install
+fi
 sudo depmod -b "$ROOTFS" "$KREL"
 sudo mkdir -p "$ROOTFS/boot"
-sudo cp "$KERNEL_DIR/.config" "$ROOTFS/boot/config-$KREL"
-if [ -f "$KERNEL_DIR/System.map" ]; then
+if [ -n "$KERNEL_CONFIG_FILE" ] && [ -s "$KERNEL_CONFIG_FILE" ]; then
+  sudo cp "$KERNEL_CONFIG_FILE" "$ROOTFS/boot/config-$KREL"
+elif [ -n "$KERNEL_DIR" ] && [ -s "$KERNEL_DIR/.config" ]; then
+  sudo cp "$KERNEL_DIR/.config" "$ROOTFS/boot/config-$KREL"
+fi
+if [ -n "$KERNEL_SYSTEM_MAP_FILE" ] && [ -s "$KERNEL_SYSTEM_MAP_FILE" ]; then
+  sudo cp "$KERNEL_SYSTEM_MAP_FILE" "$ROOTFS/boot/System.map-$KREL"
+elif [ -n "$KERNEL_DIR" ] && [ -f "$KERNEL_DIR/System.map" ]; then
   sudo cp "$KERNEL_DIR/System.map" "$ROOTFS/boot/System.map-$KREL"
 fi
 echo "::endgroup::"
