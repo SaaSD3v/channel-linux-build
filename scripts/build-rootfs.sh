@@ -107,6 +107,9 @@ sudo chroot "$ROOTFS" /bin/sh -c "depmod '$KREL'; update-initramfs -c -k '$KREL'
 cleanup_mounts
 trap - EXIT
 
+# qemu-aarch64-static is a host-side helper and must not ship in the target image.
+sudo rm -f "$ROOTFS/usr/bin/qemu-aarch64-static"
+
 sudo cp "$ROOTFS/boot/initrd.img-$KREL" "$OUT_DIR/initrd.img-$KREL"
 INITRD_SIZE="$(stat -c %s "$OUT_DIR/initrd.img-$KREL")"
 if [ "$INITRD_SIZE" -gt $((48 * 1024 * 1024)) ]; then
@@ -137,7 +140,3 @@ echo "::endgroup::"
   echo "usb_dhcp_range=172.16.42.2-172.16.42.20"
   echo "ssh_auth=public-key-only"
 } > "$OUT_DIR/build-info.txt"
-
-sha256sum "$OUT_DIR"/* > "$OUT_DIR/SHA256SUMS.tmp" || true
-grep -v 'SHA256SUMS' "$OUT_DIR/SHA256SUMS.tmp" > "$OUT_DIR/SHA256SUMS"
-rm -f "$OUT_DIR/SHA256SUMS.tmp"
