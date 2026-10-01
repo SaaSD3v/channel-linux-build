@@ -52,40 +52,91 @@ jobs:
           fi
           command -v mkdtboimg
 
-      - name: Clone and audit channel mainline tree
+      - name: Discover, clone and audit channel mainline branch
         run: |
           set -euxo pipefail
           mkdir -p out
-          git clone --depth=1 "$KERNEL_URL" kernel
+
+          # The repository default branch may be plain upstream Linux. Fetch only
+          # branch tips/trees first and locate the branch that actually carries channel.
+          git clone --depth=1 --filter=blob:none --no-checkout --no-single-branch "$KERNEL_URL" kernel
+
+          {
+            echo "=== available kernel branches ==="
+            git -C kernel for-each-ref --format='%(refname:short)' refs/remotes/origin/ | sort
+          } | tee out/kernel-branches.txt
+
+          SELECT_REF=""
+          SELECT_PATH=""
+          mapfile -t KERNEL_REFS < <(
+            git -C kernel for-each-ref --format='%(refname:short)' refs/remotes/origin/ |
+            grep -v '^origin/HEAD$' | sort
+          )
+
+          for ref in "${KERNEL_REFS[@]}"; do
+            path="$(git -C kernel ls-tree -r --name-only "$ref" -- arch/arm64/boot/dts/qcom |
+              grep -E '(^|/)sdm632-motorola-channel\.dts$' | head -n1 || true)"
+            if [ -z "$path" ]; then
+              path="$(git -C kernel ls-tree -r --name-only "$ref" -- arch/arm64/boot/dts/qcom |
+                grep -Ei '(^|/).*motorola.*channel.*\.dts$' | head -n1 || true)"
+            fi
+            if [ -z "$path" ]; then
+              path="$(git -C kernel ls-tree -r --name-only "$ref" -- arch/arm64/boot/dts/qcom |
+                grep -Ei '(^|/).*channel.*\.dts$' | head -n1 || true)"
+            fi
+            if [ -n "$path" ]; then
+              SELECT_REF="$ref"
+              SELECT_PATH="$path"
+              break
+            fi
+          done
+
+          if [ -z "$SELECT_REF" ]; then
+            {
+              echo
+              echo "=== no channel DTS found; relevant paths by branch ==="
+              for ref in "${KERNEL_REFS[@]}"; do
+                echo "--- $ref"
+                git -C kernel ls-tree -r --name-only "$ref" -- arch/arm64/boot/dts/qcom |
+                  grep -Ei 'channel|sdm632.*motorola|motorola.*sdm632' || true
+              done
+            } | tee -a out/kernel-branches.txt out/source-report.txt
+            echo "No branch in the supplied kernel repository contains a Moto G7 Play channel DTS." >&2
+            exit 1
+          fi
+
+          KERNEL_BRANCH="${SELECT_REF#origin/}"
+          git -C kernel checkout --force -B channel-build "$SELECT_REF"
+          CHANNEL_DTS="kernel/$SELECT_PATH"
+          test -s "$CHANNEL_DTS"
+
           {
             echo "=== kernel source ==="
+            echo "selected_remote_ref=$SELECT_REF"
+            echo "selected_branch=$KERNEL_BRANCH"
+            echo "selected_channel_dts=$SELECT_PATH"
             git -C kernel remote -v
             git -C kernel rev-parse HEAD
             git -C kernel log -1 --date=iso --format='%H%n%ad%n%an%n%s'
             echo
             echo "=== channel DTS candidates ==="
-            find kernel/arch/arm64/boot/dts -type f \( -iname '*channel*.dts' -o -iname '*channel*.dtsi' \) -print | sort || true
+            find kernel/arch/arm64/boot/dts/qcom -maxdepth 1 -type f \
+              \( -iname '*channel*.dts' -o -iname '*channel*.dtsi' \) -print | sort || true
             echo
-            echo "=== channel references in qcom DTS Makefile ==="
-            grep -RIn --include='Makefile' --include='Kbuild' 'channel\|sdm632-motorola' kernel/arch/arm64/boot/dts/qcom || true
+            echo "=== channel references in qcom build files ==="
+            grep -RIn --include='Makefile' --include='Kbuild' 'channel\|sdm632-motorola'               kernel/arch/arm64/boot/dts/qcom || true
             echo
-            echo "=== USB / UDC / role references near channel DTS ==="
-            CHANNEL_SOURCES="$(find kernel/arch/arm64/boot/dts/qcom -maxdepth 1 -type f \( -iname '*channel*.dts' -o -iname '*channel*.dtsi' \) -print || true)"
+            echo "=== USB / UDC / role references in channel DTS family ==="
+            CHANNEL_SOURCES="$(find kernel/arch/arm64/boot/dts/qcom -maxdepth 1 -type f \
+              \( -iname '*channel*.dts' -o -iname '*channel*.dtsi' \) -print || true)"
             if [ -n "$CHANNEL_SOURCES" ]; then
-              grep -nEi 'usb|dwc3|role|dr_mode|vbus' $CHANNEL_SOURCES || true
+              grep -nEi 'usb|dwc3|role|dr_mode|vbus|extcon' $CHANNEL_SOURCES || true
             fi
           } | tee out/source-report.txt
 
-          CHANNEL_DTS="$(find kernel/arch/arm64/boot/dts/qcom -maxdepth 1 -type f -name 'sdm632-motorola-channel.dts' -print -quit)"
-          if [ -z "$CHANNEL_DTS" ]; then
-            CHANNEL_DTS="$(find kernel/arch/arm64/boot/dts/qcom -maxdepth 1 -type f -iname '*motorola*channel*.dts' -print -quit)"
-          fi
-          if [ -z "$CHANNEL_DTS" ]; then
-            echo "No mainline channel DTS found in the supplied kernel tree." >&2
-            exit 1
-          fi
+          echo "KERNEL_BRANCH=$KERNEL_BRANCH" >> "$GITHUB_ENV"
           echo "CHANNEL_DTS=$CHANNEL_DTS" >> "$GITHUB_ENV"
-          echo "Using $CHANNEL_DTS"
+          echo "Using $SELECT_REF / $SELECT_PATH"
 
       - name: Configure mainline kernel
         working-directory: kernel
@@ -258,4 +309,4 @@ jobs:
             out/channel_test_ed25519
             out/channel_test_ed25519.pub
           if-no-files-found: ignore
-          retention-days: 3
+          retention-days: 1
