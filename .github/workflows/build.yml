@@ -42,7 +42,7 @@ jobs:
             gcc-aarch64-linux-gnu gcc-arm-none-eabi \
             device-tree-compiler libfdt-dev libssl-dev libelf-dev dwarves \
             python3 python3-pip rsync cpio gzip xz-utils zstd \
-            e2fsprogs mmdebstrap qemu-user-static binfmt-support \
+            e2fsprogs mmdebstrap arch-test qemu-user-static binfmt-support \
             openssh-client openssl kmod mkbootimg file
           command -v mkbootimg
 
@@ -52,7 +52,26 @@ jobs:
           fi
           command -v mkdtboimg
 
+      - name: Resolve reusable kernel checkpoint
+        id: kernel-key
+        run: |
+          set -euxo pipefail
+          KERNEL_SOURCE_SHA="$(git ls-remote "$KERNEL_URL" refs/heads/channel | awk 'NR==1 {print $1}')"
+          test -n "$KERNEL_SOURCE_SHA"
+          CONFIG_SHA="$(sha256sum config/channel-mainline.config | awk '{print $1}')"
+          CACHE_KEY="channel-kernel-v1-${RUNNER_OS}-$KERNEL_SOURCE_SHA-$CONFIG_SHA"
+          echo "source_sha=$KERNEL_SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "cache_key=$CACHE_KEY" >> "$GITHUB_OUTPUT"
+
+      - name: Restore reusable kernel checkpoint
+        id: kernel-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/channel-kernel
+          key: ${{ steps.kernel-key.outputs.cache_key }}
+
       - name: Discover, clone and audit channel mainline branch
+        if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
           set -euxo pipefail
           mkdir -p out
@@ -139,6 +158,7 @@ jobs:
           echo "Using $SELECT_REF / $SELECT_PATH"
 
       - name: Configure mainline kernel
+        if: steps.kernel-cache.outputs.cache-hit != 'true'
         working-directory: kernel
         run: |
           set -euxo pipefail
@@ -159,6 +179,7 @@ jobs:
           done
 
       - name: Build mainline kernel, DTBs and modules
+        if: steps.kernel-cache.outputs.cache-hit != 'true'
         working-directory: kernel
         run: |
           set -euxo pipefail
@@ -176,6 +197,17 @@ jobs:
           cp arch/arm64/boot/Image.gz ../out/Image.gz
           cp "$CHANNEL_DTB" ../out/"$DTS_BASE.dtb"
           cat arch/arm64/boot/Image.gz "$CHANNEL_DTB" > ../out/Image.gz-dtb
+          cp .config ../out/kernel.config
+          cp System.map ../out/System.map
+          printf '%s\n' "$KREL" > ../out/kernel-release.txt
+
+          rm -rf ../out/modules-root
+          mkdir -p ../out/modules-root
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            INSTALL_MOD_PATH="$PWD/../out/modules-root" modules_install
+          tar -I 'zstd -T0 -10' -cf "../out/kernel-modules-$KREL.tar.zst" \
+            -C ../out/modules-root lib/modules
+          rm -rf ../out/modules-root
 
           {
             echo
@@ -188,6 +220,51 @@ jobs:
             echo "=== selected USB config ==="
             grep -E '^CONFIG_(USB|EXTCON|TYPEC|MMC|EXT4_FS|BLK_DEV_INITRD)' .config | sort
           } | tee -a ../out/source-report.txt
+
+          rm -rf ../.cache/channel-kernel
+          mkdir -p ../.cache/channel-kernel
+          cp ../out/Image.gz ../out/Image.gz-dtb ../out/*.dtb \
+            ../out/kernel.config ../out/System.map ../out/kernel-release.txt \
+            ../out/kernel-modules-*.tar.zst ../out/source-report.txt \
+            ../.cache/channel-kernel/
+
+      - name: Materialize restored kernel checkpoint
+        if: steps.kernel-cache.outputs.cache-hit == 'true'
+        run: |
+          set -euxo pipefail
+          mkdir -p out
+          cp -a .cache/channel-kernel/. out/
+          test -s out/Image.gz
+          test -s out/Image.gz-dtb
+          test -s out/kernel.config
+          test -s out/kernel-release.txt
+          compgen -G 'out/kernel-modules-*.tar.zst' >/dev/null
+          KREL="$(cat out/kernel-release.txt)"
+          test -n "$KREL"
+          echo "KERNEL_RELEASE=$KREL" >> "$GITHUB_ENV"
+
+      - name: Save reusable kernel checkpoint
+        if: steps.kernel-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/channel-kernel
+          key: ${{ steps.kernel-key.outputs.cache_key }}
+
+      - name: Upload kernel checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: channel-kernel-${{ steps.kernel-key.outputs.source_sha }}
+          path: |
+            out/Image.gz
+            out/Image.gz-dtb
+            out/*.dtb
+            out/kernel.config
+            out/System.map
+            out/kernel-release.txt
+            out/kernel-modules-*.tar.zst
+            out/source-report.txt
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Build current lk2nd for MSM8953/SDM632
         run: |
@@ -220,6 +297,11 @@ jobs:
         run: |
           set -euxo pipefail
           chmod +x scripts/build-rootfs.sh
+          MODULES_ARCHIVE="$(ls out/kernel-modules-*.tar.zst | head -n1)"
+          test -s "$MODULES_ARCHIVE"
+          export KERNEL_MODULES_ARCHIVE="$GITHUB_WORKSPACE/$MODULES_ARCHIVE"
+          export KERNEL_CONFIG_FILE="$GITHUB_WORKSPACE/out/kernel.config"
+          export KERNEL_SYSTEM_MAP_FILE="$GITHUB_WORKSPACE/out/System.map"
           scripts/build-rootfs.sh
 
       - name: Pack lk2nd Linux boot image
@@ -273,8 +355,8 @@ jobs:
           grep -q '^ListenAddress 172.16.42.1$' rootfs/etc/ssh/sshd_config.d/10-channel-usb.conf
 
           # Ensure the exact USB feature required for Windows/Linux is requested.
-          grep -q '^CONFIG_USB_CONFIGFS_RNDIS=y$' kernel/.config
-          grep -q '^CONFIG_USB_DWC3_QCOM=y$' kernel/.config
+          grep -q '^CONFIG_USB_CONFIGFS_RNDIS=y$' out/kernel.config
+          grep -q '^CONFIG_USB_DWC3_QCOM=y$' out/kernel.config
 
           sha256sum out/* | tee out/SHA256SUMS.final
 
@@ -296,6 +378,10 @@ jobs:
             out/source-report.txt
             out/lk2nd-commit.txt
             out/dtbo-lk2nd-commit.txt
+            out/kernel.config
+            out/System.map
+            out/kernel-release.txt
+            out/kernel-modules-*.tar.zst
             out/SHA256SUMS*
           if-no-files-found: warn
           retention-days: 14
