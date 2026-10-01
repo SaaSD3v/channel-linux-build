@@ -46,6 +46,10 @@ jobs:
             openssh-client openssl kmod mkbootimg file
           command -v mkbootimg
 
+          # Fail early if the runner cannot execute arm64 binaries through binfmt.
+          sudo update-binfmts --enable qemu-aarch64
+          arch-test arm64
+
           if ! command -v mkdtboimg >/dev/null 2>&1; then
             git clone --depth=1 https://android.googlesource.com/platform/system/libufdt /tmp/libufdt
             sudo install -m 0755 /tmp/libufdt/utils/src/mkdtboimg.py /usr/local/bin/mkdtboimg
