@@ -3,6 +3,7 @@ set -eu
 
 G=/sys/kernel/config/usb_gadget/channel
 
+modprobe configfs 2>/dev/null || true
 modprobe libcomposite 2>/dev/null || true
 if ! mountpoint -q /sys/kernel/config; then
     mount -t configfs configfs /sys/kernel/config
@@ -47,7 +48,9 @@ printf '0x02' > bDeviceSubClass
 printf '0x01' > bDeviceProtocol
 
 mkdir -p strings/0x409
-printf 'channel-%s' "$(cat /etc/machine-id 2>/dev/null | cut -c1-16 || echo debian)" > strings/0x409/serialnumber
+SERIAL="$(sed -n '1{s/[^0-9A-Fa-f]//g;p;}' /etc/machine-id 2>/dev/null | cut -c1-16 || true)"
+[ -n "$SERIAL" ] || SERIAL=debian
+printf 'channel-%s' "$SERIAL" > strings/0x409/serialnumber
 printf 'Motorola Moto G7 Play Linux' > strings/0x409/manufacturer
 printf 'channel Debian USB RNDIS' > strings/0x409/product
 
@@ -63,8 +66,10 @@ printf '250' > configs/c.1/MaxPower
 mkdir -p functions/rndis.usb0
 printf '02:00:00:00:42:01' > functions/rndis.usb0/dev_addr
 printf '02:00:00:00:42:02' > functions/rndis.usb0/host_addr
-if [ -e functions/rndis.usb0/ifname ]; then
-    printf 'usb%%d' > functions/rndis.usb0/ifname
+if [ -w functions/rndis.usb0/ifname ]; then
+    # Older kernels may expose this attribute but reject custom templates.
+    # The first gadget Ethernet function still defaults to usb0 in that case.
+    printf 'usb%%d' > functions/rndis.usb0/ifname 2>/dev/null || true
 fi
 
 # Interface-level Microsoft compatible ID.
