@@ -6,7 +6,7 @@ This directory contains the project build helpers used by the workflows.
 
 Configures and builds the Channel kernel from an already-cloned kernel tree. It merges `config/channel-mainline.config`, verifies required built-in options, builds the kernel/DTBs/modules, and writes the kernel release and selected build outputs to `OUT_DIR`.
 
-The separated kernel and rootfs workflows use this helper. The integrated `main` workflow contains its own in-workflow kernel discovery/build logic.
+The main, separated kernel, and rootfs workflows use this helper for kernel configuration and compilation. It applies the validated `wcn3620-fix.patch` and verifies the Channel WCNSS configuration.
 
 ## `build-rootfs.sh`
 

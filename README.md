@@ -31,6 +31,11 @@ The helper accepts an already-applied patch and stops on a conflicting
 kernel tree. The workflow verifies the compatible in the compiled DTB
 and records the patch checksum and source diff in `source-report.txt`.
 
+The project config also pins the validated WCNSS kernel path explicitly
+(WCN36XX, WCNSS PIL/control, Qualcomm SMD/SMEM/SMP2P/SMSM, cfg80211 and
+mac80211), and the shared helper verifies the expected built-in/module
+states after `olddefconfig`.
+
 To apply the same fix manually, run from the kernel source directory:
 
 ```sh
