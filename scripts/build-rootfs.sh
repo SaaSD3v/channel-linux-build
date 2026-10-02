@@ -135,7 +135,9 @@ sudo mount -t proc proc "$ROOTFS/proc"
 sudo mount -t sysfs sysfs "$ROOTFS/sys"
 
 # Validate the target daemon with the target arm64 userspace before sealing
-# the image. This catches bad sshd_config snippets and missing host keys.
+# the image. sshd expects its runtime privilege-separation directory, which
+# systemd creates at boot but is absent in an offline chroot.
+sudo install -d -m 0755 "$ROOTFS/run/sshd"
 sudo chroot "$ROOTFS" /usr/sbin/sshd -t
 sudo chroot "$ROOTFS" /bin/sh -c "depmod '$KREL'; update-initramfs -c -k '$KREL'"
 
