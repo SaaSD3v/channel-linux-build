@@ -1,44 +1,46 @@
-# Moto G7 Play (channel) — kernel mainline 7.1
+# Moto G7 Play (channel) — kernel mainline 7.1 build
 
-Esta branch mantém o build separado do kernel usado no projeto.
+This branch contains the separated kernel workflow.
 
-O workflow é `.github/workflows/kernel-mainline-7.1.yml` e o artifact produzido é `channel-kernel-mainline-7.1`.
+Workflow: `.github/workflows/kernel-mainline-7.1.yml`
 
-## Fonte e build
+Primary artifact: `channel-kernel-mainline-7.1`
 
-A run clona uma cópia nova de:
+## Source and build
+
+The workflow clones:
 
 `https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git`
 
-usando a branch `channel`.
+using the `channel` branch, then builds the Channel kernel with the project configuration and helper script.
 
-A configuração é feita pelos arquivos já existentes no projeto, incluindo `config/channel-mainline.config` e `scripts/build-kernel.sh`.
+The kernel, DTB, modules, configuration, and symbol map are produced together so the artifact represents one consistent build.
 
-O build produz kernel, DTB e módulos compatíveis entre si na mesma run.
+## `channel-kernel-mainline-7.1`
 
-## Artifact `channel-kernel-mainline-7.1`
+Retained for 14 days.
 
-Mantido por 14 dias. Contém:
+It contains:
 
-- `Image.gz` — kernel ARM64 comprimido;
-- `Image.gz-dtb` — kernel concatenado ao DTB do Channel;
-- `sdm632-motorola-channel.dtb` — DTB compilado do aparelho;
-- `kernel.config-*` — configuração final usada no kernel;
-- `kernel-release.txt` — release exato produzido pela compilação;
-- `kernel-git-revision.txt` — commit do tree de kernel usado;
-- `kernel-modules-*.tar.zst` — módulos instaláveis correspondentes ao mesmo release;
-- `System.map` — mapa de símbolos dessa build;
-- `source-report.txt` — origem e commit da fonte;
-- `SHA256SUMS` — hashes dos principais arquivos gerados.
+- `Image.gz` — compressed ARM64 kernel image;
+- `Image.gz-dtb` — kernel image concatenated with the Channel DTB;
+- `sdm632-motorola-channel.dtb` — compiled Channel DTB;
+- `kernel.config-*` — final kernel configuration produced by the helper build;
+- `kernel-release.txt` — exact kernel release;
+- `kernel-git-revision.txt` — exact kernel source commit;
+- `kernel-modules-*.tar.zst` — modules matching that release;
+- `System.map` — kernel symbol map;
+- `source-report.txt` — source URL/ref/commit details captured by the workflow;
+- `SHA256SUMS` — hashes for the main generated outputs.
 
-## Disparo manual
+## Manual run
 
-O workflow também está exposto na `main` para aparecer no GitHub Actions.
+Use **Actions → Build kernel mainline 7.1 → Run workflow** on `main`.
 
-Use **Actions → Build kernel mainline 7.1 → Run workflow** com a branch `main`. O launcher faz checkout de `kernel-mainline-7.1` antes do build.
+The launcher checks out `kernel-mainline-7.1` before building.
 
-## O que foi alterado nesta branch
+## Changes made in this branch
 
-A branch foi separada para que o kernel possa ser recompilado e baixado sem executar rootfs, lk2nd ou DTBO.
+This branch was created so the kernel can be rebuilt and downloaded without also building rootfs, lk2nd, or DTBO.
 
-Nenhum artifact de rootfs, lk2nd ou DTBO é publicado por este workflow.
+The workflow publishes only kernel-related outputs.
