@@ -179,7 +179,7 @@ if [ -n "$KERNEL_MODULES_ARCHIVE" ]; then
   test -s "$KERNEL_MODULES_ARCHIVE"
   sudo tar -I zstd -xf "$KERNEL_MODULES_ARCHIVE" -C "$ROOTFS"
 else
-  sudo env PATH="$PATH" make -C "$KERNEL_DIR" ARCH=arm64 INSTALL_MOD_PATH="$ROOTFS" modules_install
+  sudo env PATH="$PATH" make -C "$KERNEL_DIR" ARCH=arm64 KERNELRELEASE="$KREL" INSTALL_MOD_PATH="$ROOTFS" modules_install
 fi
 sudo depmod -b "$ROOTFS" "$KREL"
 sudo mkdir -p "$ROOTFS/boot"
