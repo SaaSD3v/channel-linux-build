@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout lk2nd branch
         uses: actions/checkout@v4
+        with:
+          ref: lk2nd
 
       - name: Install lk2nd build dependencies
         run: |
