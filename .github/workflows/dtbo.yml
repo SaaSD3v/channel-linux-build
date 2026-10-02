@@ -1,0 +1,57 @@
+name: Build channel DTBO
+
+on:
+  push:
+    branches: [dtbo]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DTBO_URL: https://github.com/barni2000/dtbo-lk2nd.git
+
+jobs:
+  dtbo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout DTBO branch
+        uses: actions/checkout@v4
+
+      - name: Install DTBO build dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git ca-certificates make device-tree-compiler python3
+
+          git clone --depth=1 https://android.googlesource.com/platform/system/libufdt /tmp/libufdt
+          sudo install -m 0755 /tmp/libufdt/utils/src/mkdtboimg.py /usr/local/bin/mkdtboimg
+          command -v mkdtboimg
+
+      - name: Build minimal channel DTBO
+        run: |
+          set -euxo pipefail
+          rm -rf dtbo-lk2nd out
+          mkdir -p out
+
+          git clone --depth=1 "$DTBO_URL" dtbo-lk2nd
+          make -C dtbo-lk2nd build/dtbo-motorola-channel.img
+
+          test -s dtbo-lk2nd/build/dtbo-motorola-channel.img
+          cp dtbo-lk2nd/build/dtbo-motorola-channel.img out/dtbo-motorola-channel.img
+          git -C dtbo-lk2nd rev-parse HEAD > out/dtbo-lk2nd-commit.txt
+          sha256sum out/dtbo-motorola-channel.img | tee out/SHA256SUMS.dtbo
+
+      - name: Upload DTBO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: channel-dtbo
+          path: |
+            out/dtbo-motorola-channel.img
+            out/dtbo-lk2nd-commit.txt
+            out/SHA256SUMS.dtbo
+          if-no-files-found: error
+          retention-days: 14
