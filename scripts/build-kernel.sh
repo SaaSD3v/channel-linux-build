@@ -89,7 +89,16 @@ fi
 echo "::endgroup::"
 
 echo "::group::Build kernel, DTBs and modules"
-make -j"$JOBS" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image.gz dtbs modules
+RAW_KREL="$(make -s ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kernelrelease)"
+KREL="${RAW_KREL%-dirty}"
+if [ -z "$KREL" ]; then
+  echo "Failed to resolve kernel release" >&2
+  exit 1
+fi
+if [ "$RAW_KREL" != "$KREL" ]; then
+  echo "Normalizing patched-tree release: $RAW_KREL -> $KREL"
+fi
+make -j"$JOBS" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KERNELRELEASE="$KREL" Image.gz dtbs modules
 echo "::endgroup::"
 
 DTB="arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dtb"
@@ -100,7 +109,12 @@ if [ ! -s "$DTB" ]; then
   exit 1
 fi
 
-KREL="$(make -s ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kernelrelease)"
+case "$KREL" in
+  *-dirty)
+    echo "Refusing dirty kernel release: $KREL" >&2
+    exit 1
+    ;;
+esac
 mkdir -p "$OUT_DIR"
 cp arch/arm64/boot/Image.gz "$OUT_DIR/Image.gz-$KREL"
 cp "$DTB" "$OUT_DIR/sdm632-motorola-channel.dtb"
