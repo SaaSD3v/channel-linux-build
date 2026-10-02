@@ -118,11 +118,13 @@ The project kernel source is:
 
 `https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git`
 
-The integrated `main` workflow locates the Channel DTS in the kernel source and applies the validated `wcn3620-fix.patch` before compiling. The resulting DTB is rejected unless the WCNSS IRIS compatible is `qcom,wcn3620`, matching the tested 19.2 MHz configuration.
+The integrated `main` workflow clones the explicit `channel` kernel branch and uses the same `scripts/build-kernel.sh` helper as the component builds. That helper applies the validated `wcn3620-fix.patch`; the resulting DTB is rejected unless the WCNSS IRIS compatible is `qcom,wcn3620`, matching the tested 19.2 MHz configuration.
 
 The project-specific configuration fragment is:
 
 `config/channel-mainline.config`
+
+The fragment also pins the validated WCNSS path explicitly: WCN36XX, WCNSS PIL/control, Qualcomm SMD/SMEM/SMP2P/SMSM, cfg80211 and mac80211. The build helper verifies their final built-in/module states so an upstream defconfig change cannot silently remove Channel Wi-Fi support.
 
 It is merged on top of the ARM64 defconfig and carries the storage, initramfs, USB gadget, RNDIS, networking, and bring-up options required by the current build.
 
@@ -198,7 +200,7 @@ Each of those directories now contains its own README describing the files maint
 
 The generated rootfs is a standalone ext4 image labeled `debian-rootfs`.
 
-The current boot image expects that label and uses `rootwait` so the kernel waits for the root filesystem to become available.
+The current boot image expects that label and uses `rootwait` so the kernel waits for the root filesystem to become available. `scripts/build-bootimg.sh` is the canonical packer used by the integrated workflow, so the boot cmdline is defined in one place.
 
 The repository does not perform an automatic device repartitioning step. Storage placement and flashing remain separate from the build itself.
 
