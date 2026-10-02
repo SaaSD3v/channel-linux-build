@@ -1,51 +1,39 @@
-# Moto G7 Play (channel) — Debian mainline bring-up
+# Moto G7 Play (channel) — lk2nd
 
-Repositório de build para o Motorola Moto G7 Play (codename `channel`, SDM632).
+Esta branch gera somente o lk2nd usado pelo Channel.
 
-## Objetivo
+O workflow é `.github/workflows/lk2nd.yml` e o artifact é `channel-lk2nd-msm8953`.
 
-A pipeline gera e valida artefatos separados para um bring-up seguro:
+## Fonte e target
 
-- `lk2nd-msm8953.img` a partir do lk2nd upstream atual;
-- `dtbo-motorola-channel.img` mínimo exigido pelo lk2nd em SDM632;
-- kernel mainline do tree `moto8953-revived/channel/Mainline/channel-linux`;
-- `boot-channel.img` Android boot image para o lk2nd;
-- Debian 13 (trixie) arm64 em `debian-channel-rootfs.ext4.zst`;
-- SSH headless por USB RNDIS em `172.16.42.1`.
+A run usa:
 
-## Segurança do SSH
+- repositório: `https://github.com/msm8916-mainline/lk2nd.git`;
+- referência: `23.1`;
+- target: `lk2nd-msm8953`.
 
-A build usa somente autenticação por chave. Senha e keyboard-interactive ficam desativados.
+Antes do upload, o workflow verifica no binário as referências ao Moto G7 Play (Channel) e ao DTB `sdm632-motorola-channel`.
 
-Se o secret GitHub Actions `SSH_PUBLIC_KEY` contiver sua chave pública OpenSSH, ela será instalada em `/root/.ssh/authorized_keys`.
+## Artifact `channel-lk2nd-msm8953`
 
-Se o secret estiver ausente, a CI gera uma chave ED25519 de bring-up e publica a chave privada em um artefato separado chamado `channel-ssh-test-key`. Essa chave é somente para teste inicial e deve ser substituída por uma chave pessoal.
+Mantido por 14 dias. Contém:
 
-O sshd escuta apenas no endereço USB `172.16.42.1`.
+- `lk2nd-msm8953.img` — imagem compilada;
+- `lk2nd-commit.txt` — commit exato da fonte usada;
+- `SHA256SUMS.lk2nd` — hash da imagem produzida.
 
-## USB
+O arquivo de commit acompanha o artifact para identificar exatamente a revisão usada no build.
 
-O gadget usa uma única função RNDIS via configfs, com Microsoft OS descriptors. Isso evita a configuração dual RNDIS/ECM que costuma exigir tratamento extra no Windows. O host recebe endereço por DHCP no range `172.16.42.2-20`.
+## Disparo manual
 
-No Windows 10 (OpenSSH Client instalado):
+O workflow também está exposto na `main`.
 
-```powershell
-ssh -i .\channel_test_ed25519 root@172.16.42.1
-```
+Use **Actions → Build lk2nd MSM8953 → Run workflow** com a branch `main`. O launcher faz checkout da branch `lk2nd`.
 
-No Linux:
+## O que foi alterado nesta branch
 
-```sh
-chmod 600 channel_test_ed25519
-ssh -i ./channel_test_ed25519 root@172.16.42.1
-```
+O lk2nd foi separado do build completo para poder ser recompilado e baixado sozinho.
 
-## Estratégia de armazenamento
+Durante a separação, uma primeira run falhou porque o ambiente individual não instalava `dtc`. O workflow foi corrigido restaurando `device-tree-compiler` e `libfdt-dev`, dependências que já estavam presentes no build completo conhecido-bom. A run seguinte passou.
 
-A primeira build não reparticiona o eMMC. O rootfs é uma imagem ext4 com label `debian-rootfs`, pensada para ser escrita em um microSD durante o bring-up. O kernel usa `root=LABEL=debian-rootfs rootwait`.
-
-## Bootloader
-
-O fork antigo `00p513-dev/lk2nd` é mantido apenas como referência histórica. Ele não contém o suporte atual do Moto G7 Play. A build usa o lk2nd upstream `msm8916-mainline/lk2nd` tag `23.1`, cujo target correto é `lk2nd-msm8953`.
-
-**Não flashe nada antes de conferir os artefatos e os logs da CI.** Para o primeiro teste prefira `fastboot boot` quando o bootloader aceitar. O DTBO mínimo é requisito do lk2nd para este aparelho e deve ser tratado com cuidado porque grava a partição `dtbo`.
+Este workflow não gera kernel, rootfs ou DTBO.
