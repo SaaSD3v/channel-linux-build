@@ -4,6 +4,26 @@ on:
   push:
     branches: [rootfs]
   workflow_dispatch:
+    inputs:
+      ssh_auth:
+        description: SSH authentication mode
+        required: true
+        type: choice
+        default: generated-key
+        options:
+          - generated-key
+          - public-key-input
+          - public-key-secret
+          - generated-password
+          - password-secret
+          - generated-key+generated-password
+          - public-key-input+password-secret
+          - public-key-secret+password-secret
+          - disabled
+      ssh_public_key:
+        description: Public key to install when using a public-key-input mode
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -72,7 +92,10 @@ jobs:
           OUT_DIR: ${{ github.workspace }}/out
           WORK_DIR: ${{ github.workspace }}/.work
           KERNEL_RELEASE: ${{ env.KERNEL_RELEASE }}
+          SSH_AUTH_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.ssh_auth || 'auto' }}
+          SSH_PUBLIC_KEY_INPUT: ${{ inputs.ssh_public_key }}
           SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
         run: |
           set -euxo pipefail
           chmod +x scripts/build-rootfs.sh
@@ -104,5 +127,14 @@ jobs:
           path: |
             out/channel_test_ed25519
             out/channel_test_ed25519.pub
+          if-no-files-found: ignore
+          retention-days: 1
+
+      - name: Upload generated SSH password
+        if: always() && hashFiles('out/channel_ssh_password.txt') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: channel-rootfs-ssh-password
+          path: out/channel_ssh_password.txt
           if-no-files-found: ignore
           retention-days: 1
