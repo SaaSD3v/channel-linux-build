@@ -1,126 +1,116 @@
-# Moto G7 Play (channel) — Debian rootfs
+# Moto G7 Play (channel) — Debian rootfs build
 
-Esta branch gera o rootfs Debian do Channel separadamente.
+This branch contains the separated Debian rootfs workflow.
 
-O workflow é `.github/workflows/rootfs.yml` e o artifact principal é `channel-debian-rootfs`.
+Workflow: `.github/workflows/rootfs.yml`
 
-## O que este build faz
+Primary artifact: `channel-debian-rootfs`
 
-A run usa os arquivos já mantidos no repositório:
+## What the workflow builds
+
+The run compiles a fresh kernel dependency first because the generated rootfs needs a matching kernel release, modules, and initramfs.
+
+That kernel build is an internal dependency of this workflow. The published artifact remains focused on the rootfs.
+
+The workflow uses:
 
 - `scripts/build-kernel.sh`;
 - `scripts/build-rootfs.sh`;
 - `config/channel-mainline.config`;
-- conteúdo de `rootfs/`.
+- the files under `rootfs/`.
 
-O kernel é compilado dentro da própria run porque o rootfs precisa do release, dos módulos e do initramfs compatíveis. Esse kernel é uma dependência interna deste workflow; o artifact desta branch continua focado no rootfs.
+## `channel-debian-rootfs`
 
-## Artifact `channel-debian-rootfs`
+Retained for 14 days.
 
-Ele é mantido por 14 dias e contém:
+It contains:
 
-- `debian-channel-rootfs.ext4.zst` — imagem ext4 final do Debian, comprimida para download;
-- `initrd.img-*` — initramfs produzido para o kernel usado na mesma run;
-- `build-info.txt` — registra suite, kernel release, label do rootfs e modo de autenticação selecionado;
-- `SHA256SUMS.rootfs` — hashes dos arquivos finais do rootfs.
+- `debian-channel-rootfs.ext4.zst` — final compressed ext4 rootfs image;
+- `initrd.img-*` — initramfs generated for the matching kernel release;
+- `build-info.txt` — rootfs build metadata, including the selected SSH authentication mode;
+- `SHA256SUMS.rootfs` — hashes for the generated rootfs outputs.
 
-O workflow não publica `Image.gz`, DTB, lk2nd ou DTBO como artifacts desta branch.
+This workflow does not publish the kernel, DTB, lk2nd, or DTBO as its primary component outputs.
 
-## Campos de `Run workflow`
+## Manual `Run workflow` fields
 
-Ao abrir **Actions → Build Debian rootfs → Run workflow**, use a branch `main`. O launcher da `main` faz checkout da branch `rootfs` automaticamente.
+Use **Actions → Build Debian rootfs → Run workflow** and keep the launcher branch set to `main`. The launcher checks out `rootfs` before building.
 
 ### `ssh_auth`
 
-Escolhe como o rootfs será preparado para acesso:
-
-| Valor | Resultado |
+| Value | Build result |
 | --- | --- |
-| `generated-key` | Gera uma chave Ed25519 nova para a run e publica a chave privada/pública em `channel-rootfs-ssh-test-key`. |
-| `public-key-input` | Usa a chave pública colada no campo `ssh_public_key`. Não gera chave privada para download. |
-| `public-key-secret` | Usa o secret `SSH_PUBLIC_KEY`. Não gera chave privada para download. |
-| `generated-password` | Gera uma senha nova para a run e publica `channel-rootfs-ssh-password`. |
-| `password-secret` | Usa o secret `SSH_PASSWORD`. A senha não é publicada como artifact. |
-| `generated-key+generated-password` | Gera uma chave e uma senha. Publica os dois artifacts temporários. |
-| `public-key-input+password-secret` | Usa a chave do campo `ssh_public_key` junto com o secret `SSH_PASSWORD`. Não publica credenciais. |
-| `public-key-secret+password-secret` | Usa `SSH_PUBLIC_KEY` e `SSH_PASSWORD` dos Secrets. Não publica credenciais. |
-| `disabled` | Gera o rootfs com o serviço SSH desativado. Não publica credential artifact. |
+| `generated-key` | Generates a new Ed25519 key for the run and publishes it in `channel-rootfs-ssh-test-key`. |
+| `public-key-input` | Installs the public key supplied in `ssh_public_key`. No private key artifact is generated. |
+| `public-key-secret` | Uses the `SSH_PUBLIC_KEY` repository secret. No private key artifact is generated. |
+| `generated-password` | Generates a password for the run and publishes it in `channel-rootfs-ssh-password`. |
+| `password-secret` | Uses the `SSH_PASSWORD` repository secret. The secret is not exported as an artifact. |
+| `generated-key+generated-password` | Generates both a key and a password and publishes both temporary credential artifacts. |
+| `public-key-input+password-secret` | Uses the `ssh_public_key` input together with `SSH_PASSWORD`. No credential is re-exported. |
+| `public-key-secret+password-secret` | Uses `SSH_PUBLIC_KEY` and `SSH_PASSWORD`. No credential is re-exported. |
+| `disabled` | Builds the rootfs with `ssh.service` disabled and publishes no credential artifact. |
 
-O padrão do disparo manual é `generated-key`.
+Default: `generated-key`.
 
 ### `ssh_public_key`
 
-Campo usado somente pelos modos:
+This input is used only by:
 
 - `public-key-input`;
 - `public-key-input+password-secret`.
 
-Cole nele a linha completa da chave pública, por exemplo uma linha iniciada por `ssh-ed25519`.
+Paste the complete public-key line into this field. Do not place a private key in this input.
 
-Esse campo não recebe chave privada.
+## Optional repository secrets
 
-## Secrets opcionais
+- `SSH_PUBLIC_KEY` — required by the `public-key-secret` modes.
+- `SSH_PASSWORD` — required by the `password-secret` modes.
 
-O workflow reconhece:
+If a selected mode requires a secret that is missing, the workflow fails instead of silently replacing it with another credential.
 
-- `SSH_PUBLIC_KEY` — usado por `public-key-secret` e `public-key-secret+password-secret`;
-- `SSH_PASSWORD` — usado por `password-secret`, `public-key-input+password-secret` e `public-key-secret+password-secret`.
-
-Se um modo que exige um desses Secrets for selecionado e o Secret não existir, a run falha em vez de gerar outra credencial silenciosamente.
-
-## Artifacts temporários de credenciais
+## Temporary credential artifacts
 
 ### `channel-rootfs-ssh-test-key`
 
-Só é criado quando o modo escolhido realmente gera uma chave:
+Created only by modes that generate a key.
 
-- `generated-key`;
-- `generated-key+generated-password`.
-
-Contém:
+Contains:
 
 - `channel_test_ed25519`;
 - `channel_test_ed25519.pub`.
 
-Retenção: 1 dia.
+Retention: 1 day.
 
 ### `channel-rootfs-ssh-password`
 
-Só é criado quando o modo escolhido realmente gera uma senha:
+Created only by modes that generate a password.
 
-- `generated-password`;
-- `generated-key+generated-password`.
-
-Contém:
+Contains:
 
 - `channel_ssh_password.txt`.
 
-Retenção: 1 dia.
+Retention: 1 day.
 
-Modos que usam Secrets ou uma chave pública fornecida pelo campo do Actions não exportam essas credenciais novamente.
+## Push builds
 
-## Execução automática por push
+A push to `rootfs` also runs the workflow.
 
-Pushes na branch `rootfs` também executam este workflow.
+For push-triggered builds the mode is automatic:
 
-Nesse caso o modo é automático:
+- if `SSH_PUBLIC_KEY` exists, that public key is used;
+- otherwise a new Ed25519 key is generated and published in the temporary key artifact.
 
-- se `SSH_PUBLIC_KEY` estiver configurado, ele é usado;
-- se não estiver, a run gera uma chave Ed25519 e publica `channel-rootfs-ssh-test-key`.
+## Changes made in this branch
 
-## O que foi alterado nesta branch
+The rootfs build was separated from the integrated workflow so the rootfs can be rebuilt and downloaded on its own.
 
-A separação de `rootfs` manteve os scripts existentes e passou a publicar somente os resultados ligados ao rootfs.
+The workflow was then extended with:
 
-Depois foram adicionados:
-
-- seletor `ssh_auth` no disparo manual;
-- campo `ssh_public_key` para fornecer uma chave pública diretamente no Actions;
-- suporte aos Secrets `SSH_PUBLIC_KEY` e `SSH_PASSWORD`;
-- geração opcional de senha;
-- artifact temporário para senha gerada;
-- combinações de chave + senha;
-- opção `disabled`;
-- registro do modo selecionado em `build-info.txt`.
-
-O comportamento padrão continua usando chave gerada quando nenhuma configuração externa é fornecida.
+- the `ssh_auth` selector;
+- the `ssh_public_key` manual input;
+- optional `SSH_PUBLIC_KEY` and `SSH_PASSWORD` secrets;
+- optional generated-password output;
+- key + password combinations;
+- an SSH-disabled mode;
+- temporary generated credential artifacts;
+- authentication-mode recording in `build-info.txt`.
