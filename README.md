@@ -1,51 +1,126 @@
-# Moto G7 Play (channel) — Debian mainline bring-up
+# Moto G7 Play (channel) — Debian rootfs
 
-Repositório de build para o Motorola Moto G7 Play (codename `channel`, SDM632).
+Esta branch gera o rootfs Debian do Channel separadamente.
 
-## Objetivo
+O workflow é `.github/workflows/rootfs.yml` e o artifact principal é `channel-debian-rootfs`.
 
-A pipeline gera e valida artefatos separados para um bring-up seguro:
+## O que este build faz
 
-- `lk2nd-msm8953.img` a partir do lk2nd upstream atual;
-- `dtbo-motorola-channel.img` mínimo exigido pelo lk2nd em SDM632;
-- kernel mainline do tree `moto8953-revived/channel/Mainline/channel-linux`;
-- `boot-channel.img` Android boot image para o lk2nd;
-- Debian 13 (trixie) arm64 em `debian-channel-rootfs.ext4.zst`;
-- SSH headless por USB RNDIS em `172.16.42.1`.
+A run usa os arquivos já mantidos no repositório:
 
-## Segurança do SSH
+- `scripts/build-kernel.sh`;
+- `scripts/build-rootfs.sh`;
+- `config/channel-mainline.config`;
+- conteúdo de `rootfs/`.
 
-A build usa somente autenticação por chave. Senha e keyboard-interactive ficam desativados.
+O kernel é compilado dentro da própria run porque o rootfs precisa do release, dos módulos e do initramfs compatíveis. Esse kernel é uma dependência interna deste workflow; o artifact desta branch continua focado no rootfs.
 
-Se o secret GitHub Actions `SSH_PUBLIC_KEY` contiver sua chave pública OpenSSH, ela será instalada em `/root/.ssh/authorized_keys`.
+## Artifact `channel-debian-rootfs`
 
-Se o secret estiver ausente, a CI gera uma chave ED25519 de bring-up e publica a chave privada em um artefato separado chamado `channel-ssh-test-key`. Essa chave é somente para teste inicial e deve ser substituída por uma chave pessoal.
+Ele é mantido por 14 dias e contém:
 
-O sshd escuta apenas no endereço USB `172.16.42.1`.
+- `debian-channel-rootfs.ext4.zst` — imagem ext4 final do Debian, comprimida para download;
+- `initrd.img-*` — initramfs produzido para o kernel usado na mesma run;
+- `build-info.txt` — registra suite, kernel release, label do rootfs e modo de autenticação selecionado;
+- `SHA256SUMS.rootfs` — hashes dos arquivos finais do rootfs.
 
-## USB
+O workflow não publica `Image.gz`, DTB, lk2nd ou DTBO como artifacts desta branch.
 
-O gadget usa uma única função RNDIS via configfs, com Microsoft OS descriptors. Isso evita a configuração dual RNDIS/ECM que costuma exigir tratamento extra no Windows. O host recebe endereço por DHCP no range `172.16.42.2-20`.
+## Campos de `Run workflow`
 
-No Windows 10 (OpenSSH Client instalado):
+Ao abrir **Actions → Build Debian rootfs → Run workflow**, use a branch `main`. O launcher da `main` faz checkout da branch `rootfs` automaticamente.
 
-```powershell
-ssh -i .\channel_test_ed25519 root@172.16.42.1
-```
+### `ssh_auth`
 
-No Linux:
+Escolhe como o rootfs será preparado para acesso:
 
-```sh
-chmod 600 channel_test_ed25519
-ssh -i ./channel_test_ed25519 root@172.16.42.1
-```
+| Valor | Resultado |
+| --- | --- |
+| `generated-key` | Gera uma chave Ed25519 nova para a run e publica a chave privada/pública em `channel-rootfs-ssh-test-key`. |
+| `public-key-input` | Usa a chave pública colada no campo `ssh_public_key`. Não gera chave privada para download. |
+| `public-key-secret` | Usa o secret `SSH_PUBLIC_KEY`. Não gera chave privada para download. |
+| `generated-password` | Gera uma senha nova para a run e publica `channel-rootfs-ssh-password`. |
+| `password-secret` | Usa o secret `SSH_PASSWORD`. A senha não é publicada como artifact. |
+| `generated-key+generated-password` | Gera uma chave e uma senha. Publica os dois artifacts temporários. |
+| `public-key-input+password-secret` | Usa a chave do campo `ssh_public_key` junto com o secret `SSH_PASSWORD`. Não publica credenciais. |
+| `public-key-secret+password-secret` | Usa `SSH_PUBLIC_KEY` e `SSH_PASSWORD` dos Secrets. Não publica credenciais. |
+| `disabled` | Gera o rootfs com o serviço SSH desativado. Não publica credential artifact. |
 
-## Estratégia de armazenamento
+O padrão do disparo manual é `generated-key`.
 
-A primeira build não reparticiona o eMMC. O rootfs é uma imagem ext4 com label `debian-rootfs`, pensada para ser escrita em um microSD durante o bring-up. O kernel usa `root=LABEL=debian-rootfs rootwait`.
+### `ssh_public_key`
 
-## Bootloader
+Campo usado somente pelos modos:
 
-O fork antigo `00p513-dev/lk2nd` é mantido apenas como referência histórica. Ele não contém o suporte atual do Moto G7 Play. A build usa o lk2nd upstream `msm8916-mainline/lk2nd` tag `23.1`, cujo target correto é `lk2nd-msm8953`.
+- `public-key-input`;
+- `public-key-input+password-secret`.
 
-**Não flashe nada antes de conferir os artefatos e os logs da CI.** Para o primeiro teste prefira `fastboot boot` quando o bootloader aceitar. O DTBO mínimo é requisito do lk2nd para este aparelho e deve ser tratado com cuidado porque grava a partição `dtbo`.
+Cole nele a linha completa da chave pública, por exemplo uma linha iniciada por `ssh-ed25519`.
+
+Esse campo não recebe chave privada.
+
+## Secrets opcionais
+
+O workflow reconhece:
+
+- `SSH_PUBLIC_KEY` — usado por `public-key-secret` e `public-key-secret+password-secret`;
+- `SSH_PASSWORD` — usado por `password-secret`, `public-key-input+password-secret` e `public-key-secret+password-secret`.
+
+Se um modo que exige um desses Secrets for selecionado e o Secret não existir, a run falha em vez de gerar outra credencial silenciosamente.
+
+## Artifacts temporários de credenciais
+
+### `channel-rootfs-ssh-test-key`
+
+Só é criado quando o modo escolhido realmente gera uma chave:
+
+- `generated-key`;
+- `generated-key+generated-password`.
+
+Contém:
+
+- `channel_test_ed25519`;
+- `channel_test_ed25519.pub`.
+
+Retenção: 1 dia.
+
+### `channel-rootfs-ssh-password`
+
+Só é criado quando o modo escolhido realmente gera uma senha:
+
+- `generated-password`;
+- `generated-key+generated-password`.
+
+Contém:
+
+- `channel_ssh_password.txt`.
+
+Retenção: 1 dia.
+
+Modos que usam Secrets ou uma chave pública fornecida pelo campo do Actions não exportam essas credenciais novamente.
+
+## Execução automática por push
+
+Pushes na branch `rootfs` também executam este workflow.
+
+Nesse caso o modo é automático:
+
+- se `SSH_PUBLIC_KEY` estiver configurado, ele é usado;
+- se não estiver, a run gera uma chave Ed25519 e publica `channel-rootfs-ssh-test-key`.
+
+## O que foi alterado nesta branch
+
+A separação de `rootfs` manteve os scripts existentes e passou a publicar somente os resultados ligados ao rootfs.
+
+Depois foram adicionados:
+
+- seletor `ssh_auth` no disparo manual;
+- campo `ssh_public_key` para fornecer uma chave pública diretamente no Actions;
+- suporte aos Secrets `SSH_PUBLIC_KEY` e `SSH_PASSWORD`;
+- geração opcional de senha;
+- artifact temporário para senha gerada;
+- combinações de chave + senha;
+- opção `disabled`;
+- registro do modo selecionado em `build-info.txt`.
+
+O comportamento padrão continua usando chave gerada quando nenhuma configuração externa é fornecida.
