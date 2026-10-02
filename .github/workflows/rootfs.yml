@@ -1,0 +1,106 @@
+name: Build Debian rootfs
+
+on:
+  push:
+    branches: [rootfs]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  KERNEL_URL: https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git
+
+jobs:
+  rootfs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout rootfs build files
+        uses: actions/checkout@v4
+
+      - name: Validate existing rootfs scripts
+        run: |
+          set -eux
+          bash -n scripts/build-kernel.sh
+          bash -n scripts/build-rootfs.sh
+          sh -n rootfs/usr/local/sbin/channel-usb-gadget
+
+      - name: Install rootfs and kernel dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git ca-certificates curl make bc bison flex \
+            gcc-aarch64-linux-gnu device-tree-compiler \
+            libssl-dev libelf-dev dwarves \
+            rsync cpio gzip xz-utils zstd \
+            e2fsprogs mmdebstrap arch-test qemu-user-static binfmt-support \
+            openssh-client openssl kmod file
+
+          DEBIAN_KEYRING_DEB=/tmp/debian-archive-keyring_2025.1_all.deb
+          curl -fsSL --retry 3 \
+            https://deb.debian.org/debian/pool/main/d/debian-archive-keyring/debian-archive-keyring_2025.1_all.deb \
+            -o "$DEBIAN_KEYRING_DEB"
+          echo '9ea7778e443144ca490668737a8ab22dd3e748bb99e805e22ec055abeb3c7fac  /tmp/debian-archive-keyring_2025.1_all.deb' | sha256sum -c -
+          sudo dpkg -i "$DEBIAN_KEYRING_DEB"
+          test -s /usr/share/keyrings/debian-archive-keyring.gpg
+
+          sudo update-binfmts --enable qemu-aarch64
+          arch-test arm64
+
+      - name: Build fresh kernel dependency for rootfs
+        env:
+          KERNEL_DIR: ${{ github.workspace }}/kernel
+          OUT_DIR: ${{ github.workspace }}/out
+        run: |
+          set -euxo pipefail
+          rm -rf kernel out .work
+          mkdir -p out
+          git clone --depth=1 --branch channel "$KERNEL_URL" kernel
+          chmod +x scripts/build-kernel.sh
+          scripts/build-kernel.sh
+          test -s out/kernel-release.txt
+          test -s kernel/System.map
+
+      - name: Build Debian rootfs and initramfs
+        env:
+          KERNEL_DIR: ${{ github.workspace }}/kernel
+          OUT_DIR: ${{ github.workspace }}/out
+          WORK_DIR: ${{ github.workspace }}/.work
+          KERNEL_RELEASE: ${{ env.KERNEL_RELEASE }}
+          SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+        run: |
+          set -euxo pipefail
+          chmod +x scripts/build-rootfs.sh
+          unset KERNEL_MODULES_ARCHIVE
+          scripts/build-rootfs.sh
+
+          test -s out/debian-channel-rootfs.ext4.zst
+          test -s "out/initrd.img-$KERNEL_RELEASE"
+          sha256sum out/debian-channel-rootfs.ext4.zst "out/initrd.img-$KERNEL_RELEASE" \
+            out/build-info.txt | tee out/SHA256SUMS.rootfs
+
+      - name: Upload rootfs artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: channel-debian-rootfs
+          path: |
+            out/debian-channel-rootfs.ext4.zst
+            out/initrd.img-*
+            out/build-info.txt
+            out/SHA256SUMS.rootfs
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload generated SSH test key
+        if: always() && hashFiles('out/channel_test_ed25519') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: channel-rootfs-ssh-test-key
+          path: |
+            out/channel_test_ed25519
+            out/channel_test_ed25519.pub
+          if-no-files-found: ignore
+          retention-days: 1
