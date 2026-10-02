@@ -18,6 +18,8 @@ env:
   LK2ND_URL: https://github.com/msm8916-mainline/lk2nd.git
   LK2ND_REF: "23.1"
   DTBO_URL: https://github.com/barni2000/dtbo-lk2nd.git
+  MKBOOTIMG_URL: https://android.googlesource.com/platform/system/tools/mkbootimg
+  MKBOOTIMG_REF: d3b6ee4295e1491432ce3d0fcfd53631177bbef4
 
 jobs:
   build:
@@ -44,8 +46,7 @@ jobs:
             device-tree-compiler libfdt-dev libssl-dev libelf-dev dwarves \
             python3 python3-pip rsync cpio gzip xz-utils zstd \
             e2fsprogs mmdebstrap arch-test qemu-user-static binfmt-support \
-            openssh-client openssl kmod mkbootimg file
-          command -v mkbootimg
+            openssh-client openssl kmod file
 
           # Ubuntu 24.04 ships a Debian archive keyring that predates Trixie.
           # Install Debian's current stable keyring, pinned by SHA-256, without
@@ -67,6 +68,17 @@ jobs:
             sudo install -m 0755 /tmp/libufdt/utils/src/mkdtboimg.py /usr/local/bin/mkdtboimg
           fi
           command -v mkdtboimg
+
+          # Use AOSP mkbootimg directly. Ubuntu 24.04's mkbootimg package can
+          # install /usr/bin/mkbootimg without its Python gki module.
+          rm -rf aosp-mkbootimg
+          git init aosp-mkbootimg
+          git -C aosp-mkbootimg remote add origin "$MKBOOTIMG_URL"
+          git -C aosp-mkbootimg fetch --depth=1 origin "$MKBOOTIMG_REF"
+          git -C aosp-mkbootimg checkout --detach FETCH_HEAD
+          test "$(git -C aosp-mkbootimg rev-parse HEAD)" = "$MKBOOTIMG_REF"
+          python3 aosp-mkbootimg/mkbootimg.py --help >/dev/null
+          python3 aosp-mkbootimg/unpack_bootimg.py --help >/dev/null
 
       - name: Resolve reusable kernel checkpoint
         id: kernel-key
@@ -329,7 +341,7 @@ jobs:
 
           CMDLINE="console=ttyMSM0,115200n8 root=LABEL=debian-rootfs rootfstype=ext4 rootwait rw loglevel=7 ignore_loglevel"
 
-          mkbootimg \
+          python3 aosp-mkbootimg/mkbootimg.py \
             --header_version 0 \
             --kernel out/Image.gz-dtb \
             --ramdisk "$INITRD" \
@@ -344,7 +356,7 @@ jobs:
 
           test -s out/boot-channel.img
           file out/boot-channel.img
-          unpack_bootimg --boot_img out/boot-channel.img --out /tmp/unpacked-boot
+          python3 aosp-mkbootimg/unpack_bootimg.py --boot_img out/boot-channel.img --out /tmp/unpacked-boot
           test -s /tmp/unpacked-boot/kernel
           test -s /tmp/unpacked-boot/ramdisk
 
