@@ -57,7 +57,7 @@ rm -f "$KEYFILE"
 
 ALLOW_KEY=0
 ALLOW_PASSWORD=0
-ENABLE_SSH=1
+ALLOW_EMPTY_PASSWORD=0
 ROOT_PASSWORD=""
 
 install_public_key() {
@@ -126,8 +126,8 @@ case "$SSH_AUTH_MODE" in
     ROOT_PASSWORD="$SSH_PASSWORD"
     ALLOW_PASSWORD=1
     ;;
-  disabled)
-    ENABLE_SSH=0
+  passwordless)
+    ALLOW_EMPTY_PASSWORD=1
     ;;
   *)
     echo "Unsupported SSH_AUTH_MODE: $SSH_AUTH_MODE" >&2
@@ -139,6 +139,8 @@ if [ "$ALLOW_PASSWORD" -eq 1 ]; then
   ROOT_HASH="$(openssl passwd -6 "$ROOT_PASSWORD")"
   sudo sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "$ROOTFS/etc/shadow"
   unset ROOT_HASH ROOT_PASSWORD
+elif [ "$ALLOW_EMPTY_PASSWORD" -eq 1 ]; then
+  sudo sed -i 's|^root:[^:]*:|root::|' "$ROOTFS/etc/shadow"
 else
   RANDOM_PASSWORD="$(openssl rand -hex 48)"
   ROOT_HASH="$(openssl passwd -6 "$RANDOM_PASSWORD")"
@@ -148,11 +150,11 @@ fi
 
 sudo tee "$ROOTFS/etc/ssh/sshd_config.d/10-channel-usb.conf" >/dev/null <<EOF
 ListenAddress 172.16.42.1
-PermitRootLogin $([ "$ALLOW_PASSWORD" -eq 1 ] && echo yes || { [ "$ALLOW_KEY" -eq 1 ] && echo prohibit-password || echo no; })
+PermitRootLogin $([ "$ALLOW_PASSWORD" -eq 1 ] || [ "$ALLOW_EMPTY_PASSWORD" -eq 1 ] && echo yes || { [ "$ALLOW_KEY" -eq 1 ] && echo prohibit-password || echo no; })
 PubkeyAuthentication $([ "$ALLOW_KEY" -eq 1 ] && echo yes || echo no)
-PasswordAuthentication $([ "$ALLOW_PASSWORD" -eq 1 ] && echo yes || echo no)
+PasswordAuthentication $([ "$ALLOW_PASSWORD" -eq 1 ] || [ "$ALLOW_EMPTY_PASSWORD" -eq 1 ] && echo yes || echo no)
 KbdInteractiveAuthentication no
-PermitEmptyPasswords no
+PermitEmptyPasswords $([ "$ALLOW_EMPTY_PASSWORD" -eq 1 ] && echo yes || echo no)
 UseDNS no
 EOF
 
@@ -162,12 +164,7 @@ sudo ssh-keygen -A -f "$ROOTFS"
 # listens independently from sshd's ListenAddress when explicitly enabled.
 sudo systemctl --root="$ROOTFS" disable ssh.socket 2>/dev/null || true
 sudo systemctl --root="$ROOTFS" disable dnsmasq.service 2>/dev/null || true
-if [ "$ENABLE_SSH" -eq 1 ]; then
-  sudo systemctl --root="$ROOTFS" enable channel-usb-gadget.service channel-dhcp.service ssh.service
-else
-  sudo systemctl --root="$ROOTFS" disable ssh.service 2>/dev/null || true
-  sudo systemctl --root="$ROOTFS" enable channel-usb-gadget.service channel-dhcp.service
-fi
+sudo systemctl --root="$ROOTFS" enable channel-usb-gadget.service channel-dhcp.service ssh.service
 
 # This device is intentionally headless. Persist the journal so boot/USB
 # failures can be inspected by mounting the microSD on another machine.
