@@ -1,4 +1,4 @@
-name: Build Moto G7 Play mainline Debian (full clean)
+name: Build Moto G7 Play mainline Debian (full from scratch)
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: channel-mainline-full-build
+  group: channel-mainline-full-from-scratch
   cancel-in-progress: false
 
 env:
@@ -19,23 +19,21 @@ env:
   MKBOOTIMG_REF: d3b6ee4295e1491432ce3d0fcfd53631177bbef4
 
 jobs:
-  build:
+  build-from-scratch:
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 240
 
     steps:
-      - name: Checkout build repository
-        uses: actions/checkout@v4
-
-      - name: Validate local scripts
+      - name: Prepare completely clean workspace
         run: |
-          set -eux
-          bash -n scripts/build-rootfs.sh
-          sh -n rootfs/usr/local/sbin/channel-usb-gadget
+          set -euxo pipefail
+          cd "$GITHUB_WORKSPACE"
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          mkdir -p out work
 
-      - name: Install build dependencies
+      - name: Install build dependencies and pinned AOSP mkbootimg
         run: |
-          set -eux
+          set -euxo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             git ca-certificates curl make bc bison flex \
@@ -45,9 +43,6 @@ jobs:
             e2fsprogs mmdebstrap arch-test qemu-user-static binfmt-support \
             openssh-client openssl kmod file
 
-          # Ubuntu 24.04 ships a Debian archive keyring that predates Trixie.
-          # Install Debian's current stable keyring, pinned by SHA-256, without
-          # weakening apt/mmdebstrap signature verification.
           DEBIAN_KEYRING_DEB=/tmp/debian-archive-keyring_2025.1_all.deb
           curl -fsSL --retry 3 \
             https://deb.debian.org/debian/pool/main/d/debian-archive-keyring/debian-archive-keyring_2025.1_all.deb \
@@ -56,19 +51,13 @@ jobs:
           sudo dpkg -i "$DEBIAN_KEYRING_DEB"
           test -s /usr/share/keyrings/debian-archive-keyring.gpg
 
-          # Fail early if the runner cannot execute arm64 binaries through binfmt.
           sudo update-binfmts --enable qemu-aarch64
           arch-test arm64
 
-          if ! command -v mkdtboimg >/dev/null 2>&1; then
-            git clone --depth=1 https://android.googlesource.com/platform/system/libufdt /tmp/libufdt
-            sudo install -m 0755 /tmp/libufdt/utils/src/mkdtboimg.py /usr/local/bin/mkdtboimg
-          fi
+          git clone --depth=1 https://android.googlesource.com/platform/system/libufdt /tmp/libufdt
+          sudo install -m 0755 /tmp/libufdt/utils/src/mkdtboimg.py /usr/local/bin/mkdtboimg
           command -v mkdtboimg
 
-          # Use AOSP mkbootimg directly. Ubuntu 24.04's mkbootimg package can
-          # install /usr/bin/mkbootimg without its Python gki module.
-          rm -rf aosp-mkbootimg
           git init aosp-mkbootimg
           git -C aosp-mkbootimg remote add origin "$MKBOOTIMG_URL"
           git -C aosp-mkbootimg fetch --depth=1 origin "$MKBOOTIMG_REF"
@@ -77,13 +66,10 @@ jobs:
           python3 aosp-mkbootimg/mkbootimg.py --help >/dev/null
           python3 aosp-mkbootimg/unpack_bootimg.py --help >/dev/null
 
-      - name: Discover, clone and audit channel mainline branch
+      - name: Clone fresh channel kernel source and select channel branch
         run: |
           set -euxo pipefail
-          mkdir -p out
 
-          # The repository default branch may be plain upstream Linux. Fetch only
-          # branch tips/trees first and locate the branch that actually carries channel.
           git clone --depth=1 --filter=blob:none --no-checkout --no-single-branch "$KERNEL_URL" kernel
 
           {
@@ -95,45 +81,33 @@ jobs:
           SELECT_PATH=""
           mapfile -t KERNEL_REFS < <(
             git -C kernel for-each-ref --format='%(refname:short)' refs/remotes/origin/ |
-            grep -v '^origin/HEAD$' | sort
+              grep -v '^origin/HEAD$' | sort
           )
 
           for ref in "${KERNEL_REFS[@]}"; do
-            path="$(git -C kernel ls-tree -r --name-only "$ref" -- arch/arm64/boot/dts/qcom |
+            p="$(git -C kernel ls-tree -r --name-only "$ref" -- arch/arm64/boot/dts/qcom |
               grep -E '(^|/)sdm632-motorola-channel\.dts$' | head -n1 || true)"
-            if [ -z "$path" ]; then
-              path="$(git -C kernel ls-tree -r --name-only "$ref" -- arch/arm64/boot/dts/qcom |
+            if [ -z "$p" ]; then
+              p="$(git -C kernel ls-tree -r --name-only "$ref" -- arch/arm64/boot/dts/qcom |
                 grep -Ei '(^|/).*motorola.*channel.*\.dts$' | head -n1 || true)"
             fi
-            if [ -z "$path" ]; then
-              path="$(git -C kernel ls-tree -r --name-only "$ref" -- arch/arm64/boot/dts/qcom |
+            if [ -z "$p" ]; then
+              p="$(git -C kernel ls-tree -r --name-only "$ref" -- arch/arm64/boot/dts/qcom |
                 grep -Ei '(^|/).*channel.*\.dts$' | head -n1 || true)"
             fi
-            if [ -n "$path" ]; then
+            if [ -n "$p" ]; then
               SELECT_REF="$ref"
-              SELECT_PATH="$path"
+              SELECT_PATH="$p"
               break
             fi
           done
 
-          if [ -z "$SELECT_REF" ]; then
-            {
-              echo
-              echo "=== no channel DTS found; relevant paths by branch ==="
-              for ref in "${KERNEL_REFS[@]}"; do
-                echo "--- $ref"
-                git -C kernel ls-tree -r --name-only "$ref" -- arch/arm64/boot/dts/qcom |
-                  grep -Ei 'channel|sdm632.*motorola|motorola.*sdm632' || true
-              done
-            } | tee -a out/kernel-branches.txt out/source-report.txt
-            echo "No branch in the supplied kernel repository contains a Moto G7 Play channel DTS." >&2
-            exit 1
-          fi
+          test -n "$SELECT_REF"
+          test -n "$SELECT_PATH"
 
           KERNEL_BRANCH="${SELECT_REF#origin/}"
           git -C kernel checkout --force -B channel-build "$SELECT_REF"
-          CHANNEL_DTS="kernel/$SELECT_PATH"
-          test -s "$CHANNEL_DTS"
+          test -s "kernel/$SELECT_PATH"
 
           {
             echo "=== kernel source ==="
@@ -143,32 +117,52 @@ jobs:
             git -C kernel remote -v
             git -C kernel rev-parse HEAD
             git -C kernel log -1 --date=iso --format='%H%n%ad%n%an%n%s'
-            echo
-            echo "=== channel DTS candidates ==="
-            find kernel/arch/arm64/boot/dts/qcom -maxdepth 1 -type f \
-              \( -iname '*channel*.dts' -o -iname '*channel*.dtsi' \) -print | sort || true
-            echo
-            echo "=== channel references in qcom build files ==="
-            grep -RIn --include='Makefile' --include='Kbuild' 'channel\|sdm632-motorola'               kernel/arch/arm64/boot/dts/qcom || true
-            echo
-            echo "=== USB / UDC / role references in channel DTS family ==="
-            CHANNEL_SOURCES="$(find kernel/arch/arm64/boot/dts/qcom -maxdepth 1 -type f \
-              \( -iname '*channel*.dts' -o -iname '*channel*.dtsi' \) -print || true)"
-            if [ -n "$CHANNEL_SOURCES" ]; then
-              grep -nEi 'usb|dwc3|role|dr_mode|vbus|extcon' $CHANNEL_SOURCES || true
-            fi
           } | tee out/source-report.txt
 
-          echo "KERNEL_BRANCH=$KERNEL_BRANCH" >> "$GITHUB_ENV"
-          echo "CHANNEL_DTS=$CHANNEL_DTS" >> "$GITHUB_ENV"
-          echo "Using $SELECT_REF / $SELECT_PATH"
+          echo "CHANNEL_DTS=$SELECT_PATH" >> "$GITHUB_ENV"
 
-      - name: Configure mainline kernel
+      - name: Configure kernel from inline clean config
         working-directory: kernel
         run: |
           set -euxo pipefail
+
+          cat > /tmp/channel-mainline.config <<'EOF'
+          CONFIG_BLK_DEV_INITRD=y
+          CONFIG_RD_GZIP=y
+          CONFIG_DEVTMPFS=y
+          CONFIG_DEVTMPFS_MOUNT=y
+          CONFIG_TMPFS=y
+          CONFIG_PROC_FS=y
+          CONFIG_SYSFS=y
+          CONFIG_CONFIGFS_FS=y
+          CONFIG_EXT4_FS=y
+          CONFIG_MMC=y
+          CONFIG_MMC_BLOCK=y
+          CONFIG_MMC_SDHCI=y
+          CONFIG_MMC_SDHCI_PLTFM=y
+          CONFIG_MMC_SDHCI_MSM=y
+          CONFIG_USB=y
+          CONFIG_USB_DWC3=y
+          CONFIG_USB_DWC3_QCOM=y
+          CONFIG_USB_DWC3_DUAL_ROLE=y
+          CONFIG_USB_ROLE_SWITCH=y
+          CONFIG_USB_GADGET=y
+          CONFIG_USB_LIBCOMPOSITE=y
+          CONFIG_USB_U_ETHER=y
+          CONFIG_USB_F_RNDIS=y
+          CONFIG_USB_CONFIGFS=y
+          CONFIG_USB_CONFIGFS_RNDIS=y
+          CONFIG_NET=y
+          CONFIG_INET=y
+          CONFIG_PACKET=y
+          CONFIG_PRINTK_TIME=y
+          CONFIG_MAGIC_SYSRQ=y
+          CONFIG_DEBUG_FS=y
+          EOF
+
+          make mrproper
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
-          scripts/kconfig/merge_config.sh -m .config ../config/channel-mainline.config
+          scripts/kconfig/merge_config.sh -m .config /tmp/channel-mainline.config
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 
           for cfg in \
@@ -176,42 +170,44 @@ jobs:
             CONFIG_MMC_SDHCI CONFIG_MMC_SDHCI_PLTFM CONFIG_MMC_SDHCI_MSM \
             CONFIG_USB CONFIG_USB_DWC3 CONFIG_USB_DWC3_QCOM CONFIG_USB_GADGET \
             CONFIG_USB_CONFIGFS CONFIG_USB_CONFIGFS_RNDIS CONFIG_NET CONFIG_INET; do
-            if ! grep -q "^$cfg=y$" .config; then
-              echo "Required built-in option missing after olddefconfig: $cfg" >&2
+            grep -q "^$cfg=y$" .config || {
+              echo "Required built-in option missing: $cfg" >&2
               grep "^$cfg=" .config || true
               exit 1
-            fi
+            }
           done
 
-      - name: Build mainline kernel, DTBs and modules
+      - name: Compile kernel DTB and modules from source
         working-directory: kernel
         run: |
           set -euxo pipefail
+
           make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image.gz dtbs modules
+
           KREL="$(make -s ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kernelrelease)"
+          test -n "$KREL"
           echo "KERNEL_RELEASE=$KREL" >> "$GITHUB_ENV"
 
           DTS_BASE="$(basename "$CHANNEL_DTS" .dts)"
           CHANNEL_DTB="arch/arm64/boot/dts/qcom/$DTS_BASE.dtb"
           test -s "$CHANNEL_DTB"
+
           dtc -I dtb -O dts "$CHANNEL_DTB" -o /tmp/channel-built.dts
           grep -Eq 'motorola,channel|Moto G7 Play|moto g.7. play|channel' /tmp/channel-built.dts
 
-          mkdir -p ../out
           cp arch/arm64/boot/Image.gz ../out/Image.gz
-          cp "$CHANNEL_DTB" ../out/"$DTS_BASE.dtb"
+          cp "$CHANNEL_DTB" "../out/$DTS_BASE.dtb"
           cat arch/arm64/boot/Image.gz "$CHANNEL_DTB" > ../out/Image.gz-dtb
           cp .config ../out/kernel.config
           cp System.map ../out/System.map
           printf '%s\n' "$KREL" > ../out/kernel-release.txt
 
-          rm -rf ../out/modules-root
-          mkdir -p ../out/modules-root
+          rm -rf ../work/modules-artifact
+          mkdir -p ../work/modules-artifact
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-            INSTALL_MOD_PATH="$PWD/../out/modules-root" modules_install
+            INSTALL_MOD_PATH="$PWD/../work/modules-artifact" modules_install
           tar -I 'zstd -T0 -10' -cf "../out/kernel-modules-$KREL.tar.zst" \
-            -C ../out/modules-root lib/modules
-          rm -rf ../out/modules-root
+            -C ../work/modules-artifact lib/modules
 
           {
             echo
@@ -220,12 +216,9 @@ jobs:
             echo "channel_dts=$CHANNEL_DTS"
             echo "channel_dtb=$CHANNEL_DTB"
             sha256sum arch/arm64/boot/Image.gz "$CHANNEL_DTB"
-            echo
-            echo "=== selected USB config ==="
-            grep -E '^CONFIG_(USB|EXTCON|TYPEC|MMC|EXT4_FS|BLK_DEV_INITRD)' .config | sort
           } | tee -a ../out/source-report.txt
 
-      - name: Build current lk2nd for MSM8953/SDM632
+      - name: Compile lk2nd fresh from upstream source
         run: |
           set -euxo pipefail
           git clone --depth=1 --branch "$LK2ND_REF" "$LK2ND_URL" lk2nd
@@ -237,7 +230,7 @@ jobs:
           cp "$LK2ND_IMG" out/lk2nd-msm8953.img
           git -C lk2nd rev-parse HEAD > out/lk2nd-commit.txt
 
-      - name: Build required minimal DTBO
+      - name: Build minimal channel DTBO fresh from source
         run: |
           set -euxo pipefail
           git clone --depth=1 "$DTBO_URL" dtbo-lk2nd
@@ -246,26 +239,263 @@ jobs:
           cp dtbo-lk2nd/build/dtbo-motorola-channel.img out/dtbo-motorola-channel.img
           git -C dtbo-lk2nd rev-parse HEAD > out/dtbo-lk2nd-commit.txt
 
-      - name: Build Debian rootfs and initramfs
+      - name: Create Debian 13 arm64 rootfs completely from scratch
         env:
-          KERNEL_DIR: ${{ github.workspace }}/kernel
-          OUT_DIR: ${{ github.workspace }}/out
-          WORK_DIR: ${{ github.workspace }}/.work
-          KERNEL_RELEASE: ${{ env.KERNEL_RELEASE }}
           SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
         run: |
           set -euxo pipefail
-          chmod +x scripts/build-rootfs.sh
-          MODULES_ARCHIVE="$(ls out/kernel-modules-*.tar.zst | head -n1)"
-          test -s "$MODULES_ARCHIVE"
-          export KERNEL_MODULES_ARCHIVE="$GITHUB_WORKSPACE/$MODULES_ARCHIVE"
-          export KERNEL_CONFIG_FILE="$GITHUB_WORKSPACE/out/kernel.config"
-          export KERNEL_SYSTEM_MAP_FILE="$GITHUB_WORKSPACE/out/System.map"
-          scripts/build-rootfs.sh
 
-      - name: Pack lk2nd Linux boot image
+          ROOTFS="$GITHUB_WORKSPACE/work/rootfs"
+          rm -rf "$ROOTFS"
+          sudo mmdebstrap \
+            --architectures=arm64 \
+            --variant=minbase \
+            --components=main \
+            --keyring=/usr/share/keyrings/debian-archive-keyring.gpg \
+            --aptopt='Apt::Install-Recommends "false"' \
+            --include=debian-archive-keyring,systemd-sysv,openssh-server,iproute2,iputils-ping,dnsmasq,ca-certificates,kmod,udev,initramfs-tools,busybox-static,e2fsprogs,util-linux,procps,less,nano,ethtool,openssh-client \
+            trixie "$ROOTFS" https://deb.debian.org/debian
+
+          printf '%s\n' channel | sudo tee "$ROOTFS/etc/hostname" >/dev/null
+          sudo tee "$ROOTFS/etc/hosts" >/dev/null <<'EOF'
+          127.0.0.1 localhost
+          127.0.1.1 channel
+          ::1 localhost ip6-localhost ip6-loopback
+          EOF
+
+          sudo mkdir -p "$ROOTFS/etc/ssh/sshd_config.d"
+          sudo tee "$ROOTFS/etc/ssh/sshd_config.d/10-channel-usb.conf" >/dev/null <<'EOF'
+          ListenAddress 172.16.42.1
+          PermitRootLogin prohibit-password
+          PubkeyAuthentication yes
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PermitEmptyPasswords no
+          UseDNS no
+          EOF
+
+          sudo mkdir -p "$ROOTFS/usr/local/sbin"
+          sudo tee "$ROOTFS/usr/local/sbin/channel-usb-gadget" >/dev/null <<'EOF'
+          #!/bin/sh
+          set -eu
+          G=/sys/kernel/config/usb_gadget/channel
+          modprobe configfs 2>/dev/null || true
+          modprobe libcomposite 2>/dev/null || true
+          if ! mountpoint -q /sys/kernel/config; then
+              mount -t configfs configfs /sys/kernel/config
+          fi
+          i=0
+          while [ ! -e /sys/class/udc/* ]; do
+              i=$((i + 1))
+              [ "$i" -lt 60 ] || { echo "channel-usb: no UDC registered" >&2; exit 1; }
+              sleep 1
+          done
+          UDC="$(basename "$(find /sys/class/udc -mindepth 1 -maxdepth 1 -print -quit)")"
+          if [ -d "$G" ]; then
+              [ ! -f "$G/UDC" ] || printf '%s' "" > "$G/UDC" 2>/dev/null || true
+              rm -f "$G/configs/c.1/rndis.usb0" "$G/os_desc/c.1" 2>/dev/null || true
+              rmdir "$G/functions/rndis.usb0" 2>/dev/null || true
+              rmdir "$G/configs/c.1/strings/0x409" "$G/configs/c.1" 2>/dev/null || true
+              rmdir "$G/strings/0x409" 2>/dev/null || true
+              rmdir "$G" 2>/dev/null || true
+          fi
+          mkdir -p "$G"
+          cd "$G"
+          printf '0x1d6b' > idVendor
+          printf '0x0104' > idProduct
+          printf '0x0200' > bcdUSB
+          printf '0x0100' > bcdDevice
+          printf '0xEF' > bDeviceClass
+          printf '0x02' > bDeviceSubClass
+          printf '0x01' > bDeviceProtocol
+          mkdir -p strings/0x409
+          SERIAL="$(sed -n '1{s/[^0-9A-Fa-f]//g;p;}' /etc/machine-id 2>/dev/null | cut -c1-16 || true)"
+          [ -n "$SERIAL" ] || SERIAL=debian
+          printf 'channel-%s' "$SERIAL" > strings/0x409/serialnumber
+          printf 'Motorola Moto G7 Play Linux' > strings/0x409/manufacturer
+          printf 'channel Debian USB RNDIS' > strings/0x409/product
+          printf '1' > os_desc/use
+          printf '0xcd' > os_desc/b_vendor_code
+          printf 'MSFT100' > os_desc/qw_sign
+          mkdir -p configs/c.1/strings/0x409
+          printf 'RNDIS network for SSH' > configs/c.1/strings/0x409/configuration
+          printf '250' > configs/c.1/MaxPower
+          mkdir -p functions/rndis.usb0
+          printf '02:00:00:00:42:01' > functions/rndis.usb0/dev_addr
+          printf '02:00:00:00:42:02' > functions/rndis.usb0/host_addr
+          if [ -w functions/rndis.usb0/ifname ]; then
+              printf 'usb%%d' > functions/rndis.usb0/ifname 2>/dev/null || true
+          fi
+          if [ -d functions/rndis.usb0/os_desc/interface.rndis ]; then
+              printf 'RNDIS' > functions/rndis.usb0/os_desc/interface.rndis/compatible_id
+              printf '5162001' > functions/rndis.usb0/os_desc/interface.rndis/sub_compatible_id
+          fi
+          ln -s functions/rndis.usb0 configs/c.1/rndis.usb0
+          ln -s configs/c.1 os_desc/c.1
+          printf '%s' "$UDC" > UDC
+          i=0
+          while [ ! -d /sys/class/net/usb0 ]; do
+              i=$((i + 1))
+              [ "$i" -lt 20 ] || { echo "channel-usb: gadget bound to $UDC but usb0 did not appear" >&2; exit 1; }
+              sleep 1
+          done
+          ip link set usb0 down 2>/dev/null || true
+          ip addr flush dev usb0
+          ip link set dev usb0 address 02:00:00:00:42:01
+          ip addr add 172.16.42.1/24 dev usb0
+          ip link set usb0 up
+          echo "channel-usb: RNDIS ready on $UDC, device 172.16.42.1"
+          EOF
+          sudo chmod 0755 "$ROOTFS/usr/local/sbin/channel-usb-gadget"
+
+          sudo mkdir -p "$ROOTFS/etc/systemd/system/ssh.service.d"
+          sudo tee "$ROOTFS/etc/systemd/system/channel-usb-gadget.service" >/dev/null <<'EOF'
+          [Unit]
+          Description=Moto G7 Play USB RNDIS gadget for headless SSH
+          After=systemd-modules-load.service sys-kernel-config.mount local-fs.target
+          Wants=sys-kernel-config.mount
+          Before=network.target ssh.service channel-dhcp.service
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/channel-usb-gadget
+          RemainAfterExit=yes
+          TimeoutStartSec=90
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+
+          sudo tee "$ROOTFS/etc/systemd/system/channel-dhcp.service" >/dev/null <<'EOF'
+          [Unit]
+          Description=DHCP server for Moto G7 Play USB RNDIS link
+          Requires=channel-usb-gadget.service
+          After=channel-usb-gadget.service
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/sbin/dnsmasq --keep-in-foreground --port=0 --no-resolv --no-hosts --interface=usb0 --bind-interfaces --dhcp-authoritative --dhcp-range=172.16.42.2,172.16.42.20,255.255.255.0,12h --dhcp-option=3 --dhcp-option=6
+          Restart=on-failure
+          RestartSec=2
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+
+          sudo tee "$ROOTFS/etc/systemd/system/ssh.service.d/10-channel-usb.conf" >/dev/null <<'EOF'
+          [Unit]
+          Requires=channel-usb-gadget.service
+          After=channel-usb-gadget.service
+          EOF
+
+          sudo mkdir -p "$ROOTFS/root/.ssh"
+          KEYFILE="$GITHUB_WORKSPACE/work/authorized_key"
+          if [ -n "${SSH_PUBLIC_KEY:-}" ]; then
+            printf '%s\n' "$SSH_PUBLIC_KEY" | tr -d '\r' > "$KEYFILE"
+            ssh-keygen -l -f "$KEYFILE" >/dev/null
+          else
+            ssh-keygen -q -t ed25519 -N "" -C "channel-bringup-ci" -f out/channel_test_ed25519
+            cp out/channel_test_ed25519.pub "$KEYFILE"
+          fi
+          sudo install -m 0600 -o root -g root "$KEYFILE" "$ROOTFS/root/.ssh/authorized_keys"
+          sudo chmod 0700 "$ROOTFS/root/.ssh"
+
+          RANDOM_PASSWORD="$(openssl rand -hex 48)"
+          ROOT_HASH="$(openssl passwd -6 "$RANDOM_PASSWORD")"
+          sudo sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "$ROOTFS/etc/shadow"
+          unset RANDOM_PASSWORD ROOT_HASH
+          sudo ssh-keygen -A -f "$ROOTFS"
+
+          sudo systemctl --root="$ROOTFS" disable ssh.socket 2>/dev/null || true
+          sudo systemctl --root="$ROOTFS" disable dnsmasq.service 2>/dev/null || true
+          sudo systemctl --root="$ROOTFS" enable channel-usb-gadget.service channel-dhcp.service ssh.service
+          sudo mkdir -p "$ROOTFS/var/log/journal"
+
+      - name: Install freshly compiled modules and build initramfs inside fresh rootfs
         run: |
           set -euxo pipefail
+
+          ROOTFS="$GITHUB_WORKSPACE/work/rootfs"
+          KREL="$KERNEL_RELEASE"
+
+          sudo env PATH="$PATH" make -C kernel ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            INSTALL_MOD_PATH="$ROOTFS" modules_install
+          sudo depmod -b "$ROOTFS" "$KREL"
+
+          sudo mkdir -p "$ROOTFS/boot"
+          sudo cp out/kernel.config "$ROOTFS/boot/config-$KREL"
+          sudo cp out/System.map "$ROOTFS/boot/System.map-$KREL"
+
+          sudo tee "$ROOTFS/etc/initramfs-tools/initramfs.conf" >/dev/null <<'EOF'
+          MODULES=list
+          BUSYBOX=y
+          KEYMAP=n
+          COMPRESS=gzip
+          DEVICE=
+          NFSROOT=auto
+          RUNSIZE=10%
+          EOF
+
+          sudo tee "$ROOTFS/etc/initramfs-tools/modules" >/dev/null <<'EOF'
+          # channel: no forced modules; root storage and ext4 are built into kernel
+          EOF
+
+          sudo update-binfmts --enable qemu-aarch64 || true
+          sudo install -m 0755 /usr/bin/qemu-aarch64-static "$ROOTFS/usr/bin/qemu-aarch64-static"
+
+          cleanup_mounts() {
+            sudo umount -R "$ROOTFS/dev" 2>/dev/null || true
+            sudo umount "$ROOTFS/proc" 2>/dev/null || true
+            sudo umount "$ROOTFS/sys" 2>/dev/null || true
+          }
+          trap cleanup_mounts EXIT
+
+          sudo mount --bind /dev "$ROOTFS/dev"
+          sudo mount -t proc proc "$ROOTFS/proc"
+          sudo mount -t sysfs sysfs "$ROOTFS/sys"
+          sudo install -d -m 0755 "$ROOTFS/run/sshd"
+
+          sudo chroot "$ROOTFS" /usr/sbin/sshd -t
+          sudo chroot "$ROOTFS" /bin/sh -c "depmod '$KREL'; update-initramfs -c -k '$KREL'"
+
+          cleanup_mounts
+          trap - EXIT
+          sudo rm -f "$ROOTFS/usr/bin/qemu-aarch64-static"
+
+          sudo cp "$ROOTFS/boot/initrd.img-$KREL" "out/initrd.img-$KREL"
+          INITRD_SIZE="$(stat -c %s "out/initrd.img-$KREL")"
+          test "$INITRD_SIZE" -le $((48 * 1024 * 1024))
+
+      - name: Create fresh ext4 Debian rootfs image
+        run: |
+          set -euxo pipefail
+
+          ROOTFS="$GITHUB_WORKSPACE/work/rootfs"
+          USED_MB="$(sudo du -sm "$ROOTFS" | awk '{print $1}')"
+          IMAGE_MB=$((USED_MB + 700))
+          if [ "$IMAGE_MB" -lt 1536 ]; then IMAGE_MB=1536; fi
+
+          ROOTFS_IMG="out/debian-channel-rootfs.ext4"
+          truncate -s "${IMAGE_MB}M" "$ROOTFS_IMG"
+          sudo mkfs.ext4 -F -m 0 -L debian-rootfs -d "$ROOTFS" "$ROOTFS_IMG"
+          sudo e2fsck -fn "$ROOTFS_IMG"
+          zstd -T0 -10 -f "$ROOTFS_IMG" -o "$ROOTFS_IMG.zst"
+          rm -f "$ROOTFS_IMG"
+
+          {
+            echo "debian_suite=trixie"
+            echo "kernel_release=$KERNEL_RELEASE"
+            echo "rootfs_label=debian-rootfs"
+            echo "usb_device_ip=172.16.42.1"
+            echo "usb_dhcp_range=172.16.42.2-172.16.42.20"
+            echo "ssh_auth=public-key-only"
+            echo "build_mode=full-from-scratch"
+          } > out/build-info.txt
+
+      - name: Pack fresh lk2nd Linux boot image
+        run: |
+          set -euxo pipefail
+
           INITRD="out/initrd.img-$KERNEL_RELEASE"
           test -s "$INITRD"
           test -s out/Image.gz-dtb
@@ -286,7 +516,7 @@ jobs:
             --output out/boot-channel.img
 
           test -s out/boot-channel.img
-          file out/boot-channel.img
+          rm -rf /tmp/unpacked-boot
           python3 aosp-mkbootimg/unpack_bootimg.py --boot_img out/boot-channel.img --out /tmp/unpacked-boot
           test -s /tmp/unpacked-boot/kernel
           test -s /tmp/unpacked-boot/ramdisk
@@ -299,31 +529,33 @@ jobs:
             sha256sum out/boot-channel.img out/lk2nd-msm8953.img out/dtbo-motorola-channel.img
           } | tee -a out/source-report.txt
 
-      - name: Final static review
+      - name: Final validation and hashes
         run: |
           set -euxo pipefail
+          ROOTFS="$GITHUB_WORKSPACE/work/rootfs"
+
           test -s out/lk2nd-msm8953.img
           test -s out/dtbo-motorola-channel.img
           test -s out/boot-channel.img
           test -s out/debian-channel-rootfs.ext4.zst
           test -s out/source-report.txt
+          test -s out/kernel.config
+          test -s out/System.map
+          test -s out/kernel-release.txt
 
-          # Never ship a password-enabled SSH daemon.
-          grep -q '^PasswordAuthentication no$' rootfs/etc/ssh/sshd_config.d/10-channel-usb.conf
-          grep -q '^PermitRootLogin prohibit-password$' rootfs/etc/ssh/sshd_config.d/10-channel-usb.conf
-          grep -q '^ListenAddress 172.16.42.1$' rootfs/etc/ssh/sshd_config.d/10-channel-usb.conf
-
-          # Ensure the exact USB feature required for Windows/Linux is requested.
+          grep -q '^PasswordAuthentication no$' "$ROOTFS/etc/ssh/sshd_config.d/10-channel-usb.conf"
+          grep -q '^PermitRootLogin prohibit-password$' "$ROOTFS/etc/ssh/sshd_config.d/10-channel-usb.conf"
+          grep -q '^ListenAddress 172.16.42.1$' "$ROOTFS/etc/ssh/sshd_config.d/10-channel-usb.conf"
           grep -q '^CONFIG_USB_CONFIGFS_RNDIS=y$' out/kernel.config
           grep -q '^CONFIG_USB_DWC3_QCOM=y$' out/kernel.config
 
           sha256sum out/* | tee out/SHA256SUMS.final
 
-      - name: Upload flash/build artifacts
+      - name: Upload complete full-build artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: channel-mainline-debian
+          name: channel-mainline-debian-full
           path: |
             out/boot-channel.img
             out/lk2nd-msm8953.img
@@ -335,6 +567,7 @@ jobs:
             out/debian-channel-rootfs.ext4.zst
             out/build-info.txt
             out/source-report.txt
+            out/kernel-branches.txt
             out/lk2nd-commit.txt
             out/dtbo-lk2nd-commit.txt
             out/kernel.config
@@ -349,7 +582,7 @@ jobs:
         if: always() && hashFiles('out/channel_test_ed25519') != ''
         uses: actions/upload-artifact@v4
         with:
-          name: channel-ssh-test-key
+          name: channel-full-ssh-test-key
           path: |
             out/channel_test_ed25519
             out/channel_test_ed25519.pub
