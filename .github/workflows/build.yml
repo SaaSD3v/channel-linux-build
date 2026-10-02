@@ -47,6 +47,17 @@ jobs:
             openssh-client openssl kmod mkbootimg file
           command -v mkbootimg
 
+          # Ubuntu 24.04 ships a Debian archive keyring that predates Trixie.
+          # Install Debian's current stable keyring, pinned by SHA-256, without
+          # weakening apt/mmdebstrap signature verification.
+          DEBIAN_KEYRING_DEB=/tmp/debian-archive-keyring_2025.1_all.deb
+          curl -fsSL --retry 3 \
+            https://deb.debian.org/debian/pool/main/d/debian-archive-keyring/debian-archive-keyring_2025.1_all.deb \
+            -o "$DEBIAN_KEYRING_DEB"
+          echo '9ea7778e443144ca490668737a8ab22dd3e748bb99e805e22ec055abeb3c7fac  /tmp/debian-archive-keyring_2025.1_all.deb' | sha256sum -c -
+          sudo dpkg -i "$DEBIAN_KEYRING_DEB"
+          test -s /usr/share/keyrings/debian-archive-keyring.gpg
+
           # Fail early if the runner cannot execute arm64 binaries through binfmt.
           sudo update-binfmts --enable qemu-aarch64
           arch-test arm64
