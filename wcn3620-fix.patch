@@ -1,0 +1,15 @@
+diff --git a/arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dts b/arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dts
+index f66374c13bec2df37105f94e751fa32f73834657..a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0
+--- a/arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dts
++++ b/arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dts
+@@ -399,7 +399,7 @@ &wcnss_iris {
+ 	/*
+ 	 * Stock shows a Pronto-v3 WCNSS; the G7 family pairs SDM632 with
+ 	 * the WCN3660B (b/g/n, same as river). Confirm the FW version
+ 	 * string on hardware.
+ 	 */
+-	compatible = "qcom,wcn3660b";
++	compatible = "qcom,wcn3620";
+ 	vddxo-supply = <&pm8953_l7>;
+ 	vddrfa-supply = <&pm8953_l19>;
+ 	vddpa-supply = <&pm8953_l9>;
