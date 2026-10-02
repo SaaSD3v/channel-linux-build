@@ -44,7 +44,7 @@ sudo tee "$ROOTFS/etc/hosts" >/dev/null <<'EOF'
 ::1 localhost ip6-localhost ip6-loopback
 EOF
 
-SSH_AUTH_MODE="${SSH_AUTH_MODE:-generated-key}"
+SSH_AUTH_MODE="${SSH_AUTH_MODE:-auto}"
 SSH_PUBLIC_KEY_INPUT="${SSH_PUBLIC_KEY_INPUT:-}"
 SSH_PUBLIC_KEY="${SSH_PUBLIC_KEY:-}"
 SSH_PASSWORD="${SSH_PASSWORD:-}"
@@ -80,6 +80,15 @@ generate_password() {
 }
 
 case "$SSH_AUTH_MODE" in
+  auto)
+    if [ -n "$SSH_PUBLIC_KEY" ]; then
+      install_public_key "$SSH_PUBLIC_KEY"
+      SSH_AUTH_MODE="public-key-secret"
+    else
+      generate_public_key
+      SSH_AUTH_MODE="generated-key"
+    fi
+    ;;
   generated-key)
     generate_public_key
     ;;
