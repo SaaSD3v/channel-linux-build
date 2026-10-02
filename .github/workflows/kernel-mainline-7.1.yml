@@ -1,0 +1,89 @@
+name: Build kernel mainline 7.1
+
+on:
+  push:
+    branches: [kernel-mainline-7.1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  KERNEL_URL: https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git
+
+jobs:
+  kernel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout build files
+        uses: actions/checkout@v4
+
+      - name: Install kernel build dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git ca-certificates make bc bison flex \
+            gcc-aarch64-linux-gnu device-tree-compiler \
+            libssl-dev libelf-dev dwarves zstd
+
+      - name: Clone fresh channel mainline kernel
+        run: |
+          set -euxo pipefail
+          rm -rf kernel out
+          mkdir -p out
+          git clone --depth=1 --branch channel "$KERNEL_URL" kernel
+          {
+            echo "=== kernel source ==="
+            git -C kernel remote -v
+            git -C kernel rev-parse HEAD
+            git -C kernel log -1 --date=iso --format='%H%n%ad%n%an%n%s'
+          } | tee out/source-report.txt
+
+      - name: Configure and build kernel
+        env:
+          KERNEL_DIR: ${{ github.workspace }}/kernel
+          OUT_DIR: ${{ github.workspace }}/out
+        run: |
+          set -euxo pipefail
+          chmod +x scripts/build-kernel.sh
+          scripts/build-kernel.sh
+
+          KREL="$(cat out/kernel-release.txt)"
+          test -n "$KREL"
+          test -s "kernel/System.map"
+          cp kernel/System.map out/System.map
+
+          cat "kernel/arch/arm64/boot/Image.gz" "kernel/arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dtb" > out/Image.gz-dtb
+
+          rm -rf out/modules-root
+          mkdir -p out/modules-root
+          make -C kernel ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            INSTALL_MOD_PATH="$GITHUB_WORKSPACE/out/modules-root" modules_install
+          tar -I 'zstd -T0 -10' -cf "out/kernel-modules-$KREL.tar.zst" \
+            -C out/modules-root lib/modules
+          rm -rf out/modules-root
+
+          cp "kernel/arch/arm64/boot/Image.gz" out/Image.gz
+          sha256sum out/Image.gz out/Image.gz-dtb out/sdm632-motorola-channel.dtb \
+            out/kernel-modules-*.tar.zst | tee out/SHA256SUMS
+
+      - name: Upload kernel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: channel-kernel-mainline-7.1
+          path: |
+            out/Image.gz
+            out/Image.gz-*
+            out/sdm632-motorola-channel.dtb
+            out/kernel.config-*
+            out/kernel-release.txt
+            out/kernel-git-revision.txt
+            out/kernel-modules-*.tar.zst
+            out/System.map
+            out/source-report.txt
+            out/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
