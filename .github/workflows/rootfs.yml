@@ -84,11 +84,13 @@ jobs:
           test -s out/kernel-release.txt
           test -s out/sdm632-motorola-channel.dtb
           test -s kernel/System.map
+          KREL="$(cat out/kernel-release.txt)"
+          test -n "$KREL"
           test "$(fdtget -t s out/sdm632-motorola-channel.dtb /soc@0/remoteproc@a204000/iris compatible)" = "qcom,wcn3620"
-          grep -qx 'CONFIG_WCN36XX=m' "out/kernel.config-$KERNEL_RELEASE"
-          grep -qx 'CONFIG_QCOM_WCNSS_PIL=m' "out/kernel.config-$KERNEL_RELEASE"
-          grep -qx 'CONFIG_QCOM_WCNSS_CTRL=m' "out/kernel.config-$KERNEL_RELEASE"
-          grep -qx 'CONFIG_RPMSG_QCOM_SMD=y' "out/kernel.config-$KERNEL_RELEASE"
+          grep -qx 'CONFIG_WCN36XX=m' "out/kernel.config-$KREL"
+          grep -qx 'CONFIG_QCOM_WCNSS_PIL=m' "out/kernel.config-$KREL"
+          grep -qx 'CONFIG_QCOM_WCNSS_CTRL=m' "out/kernel.config-$KREL"
+          grep -qx 'CONFIG_RPMSG_QCOM_SMD=y' "out/kernel.config-$KREL"
 
       - name: Build Debian rootfs and initramfs
         env:
