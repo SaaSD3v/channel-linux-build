@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout DTBO branch
         uses: actions/checkout@v4
+        with:
+          ref: dtbo
 
       - name: Install DTBO build dependencies
         run: |
