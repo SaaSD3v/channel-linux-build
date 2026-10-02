@@ -51,6 +51,15 @@ jobs:
           chmod +x scripts/build-kernel.sh
           scripts/build-kernel.sh
 
+          IRIS_COMPATIBLE="$(fdtget -t s out/sdm632-motorola-channel.dtb /soc@0/remoteproc@a204000/iris compatible)"
+          test "$IRIS_COMPATIBLE" = "qcom,wcn3620"
+          {
+            echo "=== Channel Wi-Fi patch ==="
+            sha256sum out/wcn3620-fix.patch
+            echo "iris_compatible=$IRIS_COMPATIBLE"
+            git -C kernel diff -- arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dts
+          } >> out/source-report.txt
+
           KREL="$(cat out/kernel-release.txt)"
           test -n "$KREL"
           test -s "kernel/System.map"
@@ -68,7 +77,7 @@ jobs:
 
           cp "kernel/arch/arm64/boot/Image.gz" out/Image.gz
           sha256sum out/Image.gz out/Image.gz-dtb out/sdm632-motorola-channel.dtb \
-            out/kernel-modules-*.tar.zst | tee out/SHA256SUMS
+            out/kernel-modules-*.tar.zst out/wcn3620-fix.patch | tee out/SHA256SUMS
 
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
@@ -84,6 +93,7 @@ jobs:
             out/kernel-modules-*.tar.zst
             out/System.map
             out/source-report.txt
+            out/wcn3620-fix.patch
             out/SHA256SUMS
           if-no-files-found: error
           retention-days: 14
