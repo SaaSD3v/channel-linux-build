@@ -10,6 +10,20 @@ JOBS="${JOBS:-$(nproc)}"
 
 cd "$KERNEL_DIR"
 
+echo "::group::Apply Channel Wi-Fi device-tree fix"
+WIFI_PATCH="$REPO_ROOT/wcn3620-fix.patch"
+if git apply --check "$WIFI_PATCH" 2>/dev/null; then
+  git apply "$WIFI_PATCH"
+elif git apply --reverse --check "$WIFI_PATCH"; then
+  echo "Channel Wi-Fi patch is already applied."
+else
+  echo "Channel Wi-Fi patch does not match the kernel tree; refusing an unpatched build." >&2
+  exit 1
+fi
+mkdir -p "$OUT_DIR"
+cp "$WIFI_PATCH" "$OUT_DIR/wcn3620-fix.patch"
+echo "::endgroup::"
+
 echo "::group::Configure kernel"
 make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
 scripts/kconfig/merge_config.sh -m .config "$FRAGMENT"

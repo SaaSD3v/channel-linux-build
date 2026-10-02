@@ -44,27 +44,117 @@ sudo tee "$ROOTFS/etc/hosts" >/dev/null <<'EOF'
 ::1 localhost ip6-localhost ip6-loopback
 EOF
 
-sudo mkdir -p "$ROOTFS/root/.ssh"
-KEYFILE="$WORK_DIR/authorized_key"
-if [ -n "${SSH_PUBLIC_KEY:-}" ]; then
-  printf '%s\n' "$SSH_PUBLIC_KEY" | tr -d '\r' > "$KEYFILE"
-  ssh-keygen -l -f "$KEYFILE" >/dev/null
-  echo "Using SSH_PUBLIC_KEY from GitHub Actions secret."
-else
-  rm -f "$OUT_DIR/channel_test_ed25519" "$OUT_DIR/channel_test_ed25519.pub"
-  ssh-keygen -q -t ed25519 -N "" -C "channel-bringup-ci" -f "$OUT_DIR/channel_test_ed25519"
-  cp "$OUT_DIR/channel_test_ed25519.pub" "$KEYFILE"
-  echo "No SSH_PUBLIC_KEY secret: generated an isolated bring-up key."
-fi
-sudo install -m 0600 -o root -g root "$KEYFILE" "$ROOTFS/root/.ssh/authorized_keys"
-sudo chmod 0700 "$ROOTFS/root/.ssh"
+SSH_AUTH_MODE="${SSH_AUTH_MODE:-auto}"
+SSH_PUBLIC_KEY_INPUT="${SSH_PUBLIC_KEY_INPUT:-}"
+SSH_PUBLIC_KEY="${SSH_PUBLIC_KEY:-}"
+SSH_PASSWORD="${SSH_PASSWORD:-}"
 
-# Keep the root account valid for public-key auth, but make its password
-# unknown and disable all SSH password authentication in sshd_config.
-RANDOM_PASSWORD="$(openssl rand -hex 48)"
-ROOT_HASH="$(openssl passwd -6 "$RANDOM_PASSWORD")"
-sudo sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "$ROOTFS/etc/shadow"
-unset RANDOM_PASSWORD ROOT_HASH
+rm -f "$OUT_DIR/channel_test_ed25519" "$OUT_DIR/channel_test_ed25519.pub" "$OUT_DIR/channel_ssh_password.txt"
+sudo mkdir -p "$ROOTFS/root/.ssh"
+sudo chmod 0700 "$ROOTFS/root/.ssh"
+KEYFILE="$WORK_DIR/authorized_key"
+rm -f "$KEYFILE"
+
+ALLOW_KEY=0
+ALLOW_PASSWORD=0
+ENABLE_SSH=1
+ROOT_PASSWORD=""
+
+install_public_key() {
+  printf '%s\n' "$1" | tr -d '\r' > "$KEYFILE"
+  ssh-keygen -l -f "$KEYFILE" >/dev/null
+  sudo install -m 0600 -o root -g root "$KEYFILE" "$ROOTFS/root/.ssh/authorized_keys"
+  ALLOW_KEY=1
+}
+
+generate_public_key() {
+  ssh-keygen -q -t ed25519 -N "" -C "channel-bringup-ci" -f "$OUT_DIR/channel_test_ed25519"
+  install_public_key "$(cat "$OUT_DIR/channel_test_ed25519.pub")"
+}
+
+generate_password() {
+  ROOT_PASSWORD="$(openssl rand -hex 24)"
+  printf '%s\n' "$ROOT_PASSWORD" > "$OUT_DIR/channel_ssh_password.txt"
+  chmod 0600 "$OUT_DIR/channel_ssh_password.txt"
+  ALLOW_PASSWORD=1
+}
+
+case "$SSH_AUTH_MODE" in
+  auto)
+    if [ -n "$SSH_PUBLIC_KEY" ]; then
+      install_public_key "$SSH_PUBLIC_KEY"
+      SSH_AUTH_MODE="public-key-secret"
+    else
+      generate_public_key
+      SSH_AUTH_MODE="generated-key"
+    fi
+    ;;
+  generated-key)
+    generate_public_key
+    ;;
+  public-key-input)
+    [ -n "$SSH_PUBLIC_KEY_INPUT" ] || { echo "ssh_public_key input is required for public-key-input" >&2; exit 2; }
+    install_public_key "$SSH_PUBLIC_KEY_INPUT"
+    ;;
+  public-key-secret)
+    [ -n "$SSH_PUBLIC_KEY" ] || { echo "SSH_PUBLIC_KEY secret is required for public-key-secret" >&2; exit 2; }
+    install_public_key "$SSH_PUBLIC_KEY"
+    ;;
+  generated-password)
+    generate_password
+    ;;
+  password-secret)
+    [ -n "$SSH_PASSWORD" ] || { echo "SSH_PASSWORD secret is required for password-secret" >&2; exit 2; }
+    ROOT_PASSWORD="$SSH_PASSWORD"
+    ALLOW_PASSWORD=1
+    ;;
+  generated-key+generated-password)
+    generate_public_key
+    generate_password
+    ;;
+  public-key-input+password-secret)
+    [ -n "$SSH_PUBLIC_KEY_INPUT" ] || { echo "ssh_public_key input is required" >&2; exit 2; }
+    [ -n "$SSH_PASSWORD" ] || { echo "SSH_PASSWORD secret is required" >&2; exit 2; }
+    install_public_key "$SSH_PUBLIC_KEY_INPUT"
+    ROOT_PASSWORD="$SSH_PASSWORD"
+    ALLOW_PASSWORD=1
+    ;;
+  public-key-secret+password-secret)
+    [ -n "$SSH_PUBLIC_KEY" ] || { echo "SSH_PUBLIC_KEY secret is required" >&2; exit 2; }
+    [ -n "$SSH_PASSWORD" ] || { echo "SSH_PASSWORD secret is required" >&2; exit 2; }
+    install_public_key "$SSH_PUBLIC_KEY"
+    ROOT_PASSWORD="$SSH_PASSWORD"
+    ALLOW_PASSWORD=1
+    ;;
+  disabled)
+    ENABLE_SSH=0
+    ;;
+  *)
+    echo "Unsupported SSH_AUTH_MODE: $SSH_AUTH_MODE" >&2
+    exit 2
+    ;;
+esac
+
+if [ "$ALLOW_PASSWORD" -eq 1 ]; then
+  ROOT_HASH="$(openssl passwd -6 "$ROOT_PASSWORD")"
+  sudo sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "$ROOTFS/etc/shadow"
+  unset ROOT_HASH ROOT_PASSWORD
+else
+  RANDOM_PASSWORD="$(openssl rand -hex 48)"
+  ROOT_HASH="$(openssl passwd -6 "$RANDOM_PASSWORD")"
+  sudo sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "$ROOTFS/etc/shadow"
+  unset RANDOM_PASSWORD ROOT_HASH
+fi
+
+sudo tee "$ROOTFS/etc/ssh/sshd_config.d/10-channel-usb.conf" >/dev/null <<EOF
+ListenAddress 172.16.42.1
+PermitRootLogin $([ "$ALLOW_PASSWORD" -eq 1 ] && echo yes || { [ "$ALLOW_KEY" -eq 1 ] && echo prohibit-password || echo no; })
+PubkeyAuthentication $([ "$ALLOW_KEY" -eq 1 ] && echo yes || echo no)
+PasswordAuthentication $([ "$ALLOW_PASSWORD" -eq 1 ] && echo yes || echo no)
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+UseDNS no
+EOF
 
 sudo ssh-keygen -A -f "$ROOTFS"
 
@@ -72,7 +162,12 @@ sudo ssh-keygen -A -f "$ROOTFS"
 # listens independently from sshd's ListenAddress when explicitly enabled.
 sudo systemctl --root="$ROOTFS" disable ssh.socket 2>/dev/null || true
 sudo systemctl --root="$ROOTFS" disable dnsmasq.service 2>/dev/null || true
-sudo systemctl --root="$ROOTFS" enable channel-usb-gadget.service channel-dhcp.service ssh.service
+if [ "$ENABLE_SSH" -eq 1 ]; then
+  sudo systemctl --root="$ROOTFS" enable channel-usb-gadget.service channel-dhcp.service ssh.service
+else
+  sudo systemctl --root="$ROOTFS" disable ssh.service 2>/dev/null || true
+  sudo systemctl --root="$ROOTFS" enable channel-usb-gadget.service channel-dhcp.service
+fi
 
 # This device is intentionally headless. Persist the journal so boot/USB
 # failures can be inspected by mounting the microSD on another machine.
@@ -175,5 +270,5 @@ echo "::endgroup::"
   echo "rootfs_label=debian-rootfs"
   echo "usb_device_ip=172.16.42.1"
   echo "usb_dhcp_range=172.16.42.2-172.16.42.20"
-  echo "ssh_auth=public-key-only"
+  echo "ssh_auth=$SSH_AUTH_MODE"
 } > "$OUT_DIR/build-info.txt"

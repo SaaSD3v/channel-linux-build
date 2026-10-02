@@ -90,7 +90,7 @@ If the secret is not configured, the build generates an isolated Ed25519 test ke
 
 This credential artifact is retained for 1 day.
 
-The selectable SSH modes added later belong to the separated `rootfs` workflow and are documented in the `rootfs` branch README.
+The integrated workflow and the separated `rootfs` workflow now share the same SSH authentication implementation. Manual integrated runs expose the same selectable key/password/disabled modes; push builds keep the automatic key behavior.
 
 ## Separated rootfs build
 
@@ -118,7 +118,7 @@ The project kernel source is:
 
 `https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git`
 
-The integrated `main` workflow does not assume that the repository default branch is the Channel branch. It enumerates the available remote branches and selects the one that contains the Channel DTS.
+The integrated `main` workflow locates the Channel DTS in the kernel source and applies the validated `wcn3620-fix.patch` before compiling. The resulting DTB is rejected unless the WCNSS IRIS compatible is `qcom,wcn3620`, matching the tested 19.2 MHz configuration.
 
 The project-specific configuration fragment is:
 
@@ -126,7 +126,7 @@ The project-specific configuration fragment is:
 
 It is merged on top of the ARM64 defconfig and carries the storage, initramfs, USB gadget, RNDIS, networking, and bring-up options required by the current build.
 
-The separated kernel build publishes the kernel image, Channel DTB, combined kernel+DTB image, matching modules, configuration, release string, source revision, `System.map`, and hashes.
+The integrated and separated kernel builds use the same validated Channel Wi-Fi patch. The separated kernel build publishes the kernel image, Channel DTB, combined kernel+DTB image, matching modules, configuration, release string, source revision, `System.map`, the applied patch, and hashes.
 
 ## lk2nd
 
@@ -219,8 +219,8 @@ These directory READMEs complement this main project README; they are not intend
 
 The repository was reorganized so the complete build remains on `main` while rootfs, kernel, DTBO, and lk2nd can also be built independently.
 
-The separated `rootfs` workflow gained selectable authentication modes and optional generated credential artifacts.
+The selectable rootfs SSH authentication modes are now also wired into manual integrated builds; push builds retain automatic public-key behavior.
 
-The component workflows were also copied to `main` as manual launchers so the GitHub Actions interface exposes **Run workflow** for each separated build.
+The component workflows are also exposed from `main` as manual launchers, and the kernel launcher now mirrors the specialized branch's Wi-Fi validation and patch provenance checks.
 
 Documentation was expanded across the repository. The main README remains the project overview, while per-directory READMEs document the purpose of the files stored in each folder.
