@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout rootfs build files
         uses: actions/checkout@v4
+        with:
+          ref: rootfs
 
       - name: Validate existing rootfs scripts
         run: |
