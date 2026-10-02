@@ -23,7 +23,14 @@ mkdir -p "$WORK_DIR" "$OUT_DIR"
 sudo rm -rf "$ROOTFS"
 
 echo "::group::Create Debian 13 (trixie) arm64 rootfs"
-sudo mmdebstrap   --architectures=arm64   --variant=minbase   --components=main   --aptopt='Apt::Install-Recommends "false"'   --include=systemd-sysv,openssh-server,iproute2,iputils-ping,dnsmasq,ca-certificates,kmod,udev,initramfs-tools,busybox-static,e2fsprogs,util-linux,procps,less,nano,ethtool,openssh-client   trixie "$ROOTFS" http://deb.debian.org/debian
+sudo mmdebstrap \
+  --architectures=arm64 \
+  --variant=minbase \
+  --components=main \
+  --keyring=/usr/share/keyrings/debian-archive-keyring.gpg \
+  --aptopt='Apt::Install-Recommends "false"' \
+  --include=debian-archive-keyring,systemd-sysv,openssh-server,iproute2,iputils-ping,dnsmasq,ca-certificates,kmod,udev,initramfs-tools,busybox-static,e2fsprogs,util-linux,procps,less,nano,ethtool,openssh-client \
+  trixie "$ROOTFS" https://deb.debian.org/debian
 echo "::endgroup::"
 
 echo "::group::Install channel headless configuration"
