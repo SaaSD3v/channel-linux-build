@@ -19,7 +19,7 @@ on:
           - generated-key+generated-password
           - public-key-input+password-secret
           - public-key-secret+password-secret
-          - passwordless
+          - disabled
       ssh_public_key:
         description: Public key to install when using a public-key-input mode
         required: false
