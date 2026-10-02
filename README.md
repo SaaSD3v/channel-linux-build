@@ -1,51 +1,44 @@
-# Moto G7 Play (channel) — Debian mainline bring-up
+# Moto G7 Play (channel) — kernel mainline 7.1
 
-Repositório de build para o Motorola Moto G7 Play (codename `channel`, SDM632).
+Esta branch mantém o build separado do kernel usado no projeto.
 
-## Objetivo
+O workflow é `.github/workflows/kernel-mainline-7.1.yml` e o artifact produzido é `channel-kernel-mainline-7.1`.
 
-A pipeline gera e valida artefatos separados para um bring-up seguro:
+## Fonte e build
 
-- `lk2nd-msm8953.img` a partir do lk2nd upstream atual;
-- `dtbo-motorola-channel.img` mínimo exigido pelo lk2nd em SDM632;
-- kernel mainline do tree `moto8953-revived/channel/Mainline/channel-linux`;
-- `boot-channel.img` Android boot image para o lk2nd;
-- Debian 13 (trixie) arm64 em `debian-channel-rootfs.ext4.zst`;
-- SSH headless por USB RNDIS em `172.16.42.1`.
+A run clona uma cópia nova de:
 
-## Segurança do SSH
+`https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git`
 
-A build usa somente autenticação por chave. Senha e keyboard-interactive ficam desativados.
+usando a branch `channel`.
 
-Se o secret GitHub Actions `SSH_PUBLIC_KEY` contiver sua chave pública OpenSSH, ela será instalada em `/root/.ssh/authorized_keys`.
+A configuração é feita pelos arquivos já existentes no projeto, incluindo `config/channel-mainline.config` e `scripts/build-kernel.sh`.
 
-Se o secret estiver ausente, a CI gera uma chave ED25519 de bring-up e publica a chave privada em um artefato separado chamado `channel-ssh-test-key`. Essa chave é somente para teste inicial e deve ser substituída por uma chave pessoal.
+O build produz kernel, DTB e módulos compatíveis entre si na mesma run.
 
-O sshd escuta apenas no endereço USB `172.16.42.1`.
+## Artifact `channel-kernel-mainline-7.1`
 
-## USB
+Mantido por 14 dias. Contém:
 
-O gadget usa uma única função RNDIS via configfs, com Microsoft OS descriptors. Isso evita a configuração dual RNDIS/ECM que costuma exigir tratamento extra no Windows. O host recebe endereço por DHCP no range `172.16.42.2-20`.
+- `Image.gz` — kernel ARM64 comprimido;
+- `Image.gz-dtb` — kernel concatenado ao DTB do Channel;
+- `sdm632-motorola-channel.dtb` — DTB compilado do aparelho;
+- `kernel.config-*` — configuração final usada no kernel;
+- `kernel-release.txt` — release exato produzido pela compilação;
+- `kernel-git-revision.txt` — commit do tree de kernel usado;
+- `kernel-modules-*.tar.zst` — módulos instaláveis correspondentes ao mesmo release;
+- `System.map` — mapa de símbolos dessa build;
+- `source-report.txt` — origem e commit da fonte;
+- `SHA256SUMS` — hashes dos principais arquivos gerados.
 
-No Windows 10 (OpenSSH Client instalado):
+## Disparo manual
 
-```powershell
-ssh -i .\channel_test_ed25519 root@172.16.42.1
-```
+O workflow também está exposto na `main` para aparecer no GitHub Actions.
 
-No Linux:
+Use **Actions → Build kernel mainline 7.1 → Run workflow** com a branch `main`. O launcher faz checkout de `kernel-mainline-7.1` antes do build.
 
-```sh
-chmod 600 channel_test_ed25519
-ssh -i ./channel_test_ed25519 root@172.16.42.1
-```
+## O que foi alterado nesta branch
 
-## Estratégia de armazenamento
+A branch foi separada para que o kernel possa ser recompilado e baixado sem executar rootfs, lk2nd ou DTBO.
 
-A primeira build não reparticiona o eMMC. O rootfs é uma imagem ext4 com label `debian-rootfs`, pensada para ser escrita em um microSD durante o bring-up. O kernel usa `root=LABEL=debian-rootfs rootwait`.
-
-## Bootloader
-
-O fork antigo `00p513-dev/lk2nd` é mantido apenas como referência histórica. Ele não contém o suporte atual do Moto G7 Play. A build usa o lk2nd upstream `msm8916-mainline/lk2nd` tag `23.1`, cujo target correto é `lk2nd-msm8953`.
-
-**Não flashe nada antes de conferir os artefatos e os logs da CI.** Para o primeiro teste prefira `fastboot boot` quando o bootloader aceitar. O DTBO mínimo é requisito do lk2nd para este aparelho e deve ser tratado com cuidado porque grava a partição `dtbo`.
+Nenhum artifact de rootfs, lk2nd ou DTBO é publicado por este workflow.
