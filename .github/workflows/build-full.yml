@@ -27,6 +27,12 @@ jobs:
       - name: Checkout build repository
         uses: actions/checkout@v4
 
+      - name: Remove every generated build directory
+        run: |
+          set -euxo pipefail
+          rm -rf kernel out .work lk2nd dtbo-lk2nd aosp-mkbootimg
+          mkdir -p out
+
       - name: Validate local scripts
         run: |
           set -eux
@@ -167,6 +173,7 @@ jobs:
         working-directory: kernel
         run: |
           set -euxo pipefail
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- mrproper
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
           scripts/kconfig/merge_config.sh -m .config ../config/channel-mainline.config
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
@@ -246,21 +253,19 @@ jobs:
           cp dtbo-lk2nd/build/dtbo-motorola-channel.img out/dtbo-motorola-channel.img
           git -C dtbo-lk2nd rev-parse HEAD > out/dtbo-lk2nd-commit.txt
 
-      - name: Build Debian rootfs and initramfs
+      - name: Build Debian rootfs and initramfs directly from fresh kernel tree
         env:
           KERNEL_DIR: ${{ github.workspace }}/kernel
           OUT_DIR: ${{ github.workspace }}/out
           WORK_DIR: ${{ github.workspace }}/.work
           KERNEL_RELEASE: ${{ env.KERNEL_RELEASE }}
+          KERNEL_CONFIG_FILE: ${{ github.workspace }}/out/kernel.config
+          KERNEL_SYSTEM_MAP_FILE: ${{ github.workspace }}/out/System.map
           SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
         run: |
           set -euxo pipefail
           chmod +x scripts/build-rootfs.sh
-          MODULES_ARCHIVE="$(ls out/kernel-modules-*.tar.zst | head -n1)"
-          test -s "$MODULES_ARCHIVE"
-          export KERNEL_MODULES_ARCHIVE="$GITHUB_WORKSPACE/$MODULES_ARCHIVE"
-          export KERNEL_CONFIG_FILE="$GITHUB_WORKSPACE/out/kernel.config"
-          export KERNEL_SYSTEM_MAP_FILE="$GITHUB_WORKSPACE/out/System.map"
+          unset KERNEL_MODULES_ARCHIVE
           scripts/build-rootfs.sh
 
       - name: Pack lk2nd Linux boot image
@@ -323,7 +328,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: channel-mainline-debian
+          name: channel-mainline-debian-full-rebuild
           path: |
             out/boot-channel.img
             out/lk2nd-msm8953.img
