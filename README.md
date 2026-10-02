@@ -1,39 +1,43 @@
-# Moto G7 Play (channel) — lk2nd
+# Moto G7 Play (channel) — lk2nd build
 
-Esta branch gera somente o lk2nd usado pelo Channel.
+This branch contains the separated lk2nd workflow.
 
-O workflow é `.github/workflows/lk2nd.yml` e o artifact é `channel-lk2nd-msm8953`.
+Workflow: `.github/workflows/lk2nd.yml`
 
-## Fonte e target
+Primary artifact: `channel-lk2nd-msm8953`
 
-A run usa:
+## Source and target
 
-- repositório: `https://github.com/msm8916-mainline/lk2nd.git`;
-- referência: `23.1`;
+The workflow uses:
+
+- repository: `https://github.com/msm8916-mainline/lk2nd.git`;
+- reference: `23.1`;
 - target: `lk2nd-msm8953`.
 
-Antes do upload, o workflow verifica no binário as referências ao Moto G7 Play (Channel) e ao DTB `sdm632-motorola-channel`.
+Before upload, the workflow checks the built image for the Channel device strings used by this project.
 
-## Artifact `channel-lk2nd-msm8953`
+## `channel-lk2nd-msm8953`
 
-Mantido por 14 dias. Contém:
+Retained for 14 days.
 
-- `lk2nd-msm8953.img` — imagem compilada;
-- `lk2nd-commit.txt` — commit exato da fonte usada;
-- `SHA256SUMS.lk2nd` — hash da imagem produzida.
+It contains:
 
-O arquivo de commit acompanha o artifact para identificar exatamente a revisão usada no build.
+- `lk2nd-msm8953.img` — compiled lk2nd image;
+- `lk2nd-commit.txt` — exact lk2nd source commit used;
+- `SHA256SUMS.lk2nd` — hash of the generated image.
 
-## Disparo manual
+The commit file is included so a downloaded image can be tied back to the exact source revision used by the run.
 
-O workflow também está exposto na `main`.
+## Manual run
 
-Use **Actions → Build lk2nd MSM8953 → Run workflow** com a branch `main`. O launcher faz checkout da branch `lk2nd`.
+Use **Actions → Build lk2nd MSM8953 → Run workflow** on `main`.
 
-## O que foi alterado nesta branch
+The launcher checks out `lk2nd` before building.
 
-O lk2nd foi separado do build completo para poder ser recompilado e baixado sozinho.
+## Changes made in this branch
 
-Durante a separação, uma primeira run falhou porque o ambiente individual não instalava `dtc`. O workflow foi corrigido restaurando `device-tree-compiler` e `libfdt-dev`, dependências que já estavam presentes no build completo conhecido-bom. A run seguinte passou.
+The lk2nd build was separated from the integrated build so it can be rebuilt and downloaded independently.
 
-Este workflow não gera kernel, rootfs ou DTBO.
+During the first separated run, the environment was missing `dtc`. The workflow was corrected by restoring `device-tree-compiler` and `libfdt-dev`, matching dependencies already available in the known integrated build. The next separated lk2nd run completed successfully.
+
+This workflow does not publish kernel, rootfs, or DTBO outputs.
