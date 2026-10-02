@@ -26,7 +26,7 @@ jobs:
           set -euxo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            git ca-certificates make gcc-arm-none-eabi file
+            git ca-certificates make gcc-arm-none-eabi device-tree-compiler libfdt-dev file
 
       - name: Build lk2nd for MSM8953/SDM632
         run: |
