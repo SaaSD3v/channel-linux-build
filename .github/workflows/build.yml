@@ -154,6 +154,7 @@ jobs:
 
           KREL="$(cat out/kernel-release.txt)"
           test -n "$KREL"
+          case "$KREL" in *-dirty) echo "dirty kernel release is not allowed: $KREL" >&2; exit 1;; esac
           DTB="out/sdm632-motorola-channel.dtb"
           test -s "$DTB"
           test -s kernel/System.map
@@ -168,7 +169,7 @@ jobs:
 
           rm -rf out/modules-root
           mkdir -p out/modules-root
-          make -C kernel ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+          make -C kernel ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KERNELRELEASE="$KREL" \
             INSTALL_MOD_PATH="$GITHUB_WORKSPACE/out/modules-root" modules_install
           tar -I 'zstd -T0 -10' -cf "out/kernel-modules-$KREL.tar.zst" \
             -C out/modules-root lib/modules
