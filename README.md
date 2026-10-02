@@ -114,3 +114,8 @@ The workflow was then extended with:
 - an SSH-disabled mode;
 - temporary generated credential artifacts;
 - authentication-mode recording in `build-info.txt`.
+
+
+## Kernel consistency
+
+The internal kernel dependency uses the same validated Channel Wi-Fi path as the main and kernel component builds. The shared helper applies `wcn3620-fix.patch`, the compiled DTB must report `qcom,wcn3620` for the WCNSS IRIS node, and the required WCNSS kernel options are verified before the rootfs is generated.
