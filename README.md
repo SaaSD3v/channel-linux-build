@@ -1,35 +1,41 @@
-# Moto G7 Play (channel) — DTBO
+# Moto G7 Play (channel) — DTBO build
 
-Esta branch gera somente o DTBO mínimo usado pelo fluxo do Channel.
+This branch contains the separated Channel DTBO workflow.
 
-O workflow é `.github/workflows/dtbo.yml` e o artifact é `channel-dtbo`.
+Workflow: `.github/workflows/dtbo.yml`
 
-## Fonte
+Primary artifact: `channel-dtbo`
 
-A run clona:
+## Source and target
+
+The workflow clones:
 
 `https://github.com/barni2000/dtbo-lk2nd.git`
 
-e gera o target `build/dtbo-motorola-channel.img`.
+and builds:
 
-## Artifact `channel-dtbo`
+`build/dtbo-motorola-channel.img`
 
-Mantido por 14 dias. Contém:
+## `channel-dtbo`
 
-- `dtbo-motorola-channel.img` — imagem DTBO gerada;
-- `dtbo-lk2nd-commit.txt` — commit exato da fonte usada;
-- `SHA256SUMS.dtbo` — hash da imagem produzida.
+Retained for 14 days.
 
-O commit da fonte é incluído para permitir identificar exatamente de qual revisão veio o arquivo baixado.
+It contains:
 
-## Disparo manual
+- `dtbo-motorola-channel.img` — generated Channel DTBO image;
+- `dtbo-lk2nd-commit.txt` — exact source commit used for the build;
+- `SHA256SUMS.dtbo` — hash of the generated image.
 
-O workflow também está exposto na `main`.
+The commit file is included so a downloaded DTBO can be tied back to the exact source revision used by the run.
 
-Use **Actions → Build channel DTBO → Run workflow** com a branch `main`. O launcher faz checkout da branch `dtbo`.
+## Manual run
 
-## O que foi alterado nesta branch
+Use **Actions → Build channel DTBO → Run workflow** on `main`.
 
-O DTBO foi separado do build completo para poder ser recompilado e baixado sozinho.
+The launcher checks out `dtbo` before building.
 
-Este workflow não gera kernel, rootfs ou lk2nd.
+## Changes made in this branch
+
+The DTBO build was separated from the integrated build so it can be rebuilt and downloaded on its own.
+
+This workflow does not publish kernel, rootfs, or lk2nd outputs.
