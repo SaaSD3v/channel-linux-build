@@ -1,0 +1,12 @@
+#!/sbin/openrc-run
+
+description="Watch for Moto G7 Play Wi-Fi configuration"
+command="/usr/local/sbin/channel-wifi-config"
+supervisor=supervise-daemon
+respawn_delay=2
+respawn_max=0
+retry="TERM/10/KILL/5"
+
+depend() {
+    need localmount
+}
