@@ -19,7 +19,7 @@ done
 i=0
 until grep -q '^network={' "$CONF" &&
       grep -q '^[[:space:]]*psk=' "$CONF" &&
-      grep -q '^}$' "$CONF"; do
+      grep -q '^[[:space:]]*}$' "$CONF"; do
     i=$((i + 1))
     [ "$i" -lt 30 ] || {
         echo "channel-wifi: invalid or incomplete wpa_supplicant config" >&2
@@ -30,6 +30,7 @@ done
 
 sed -i '/^[[:space:]]*#psk=/d' "$CONF"
 chmod 0600 "$CONF"
+mkdir -p /run/wpa_supplicant
 
 /usr/local/sbin/channel-wifi-firmware
 ip link set wlan0 up
