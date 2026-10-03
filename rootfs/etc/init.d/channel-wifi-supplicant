@@ -1,0 +1,31 @@
+#!/sbin/openrc-run
+
+description="Moto G7 Play Wi-Fi supplicant"
+command="/sbin/wpa_supplicant"
+command_args="-i wlan0 -D nl80211 -c /etc/wpa_supplicant/wpa_supplicant-channel.conf"
+supervisor=supervise-daemon
+respawn_delay=2
+respawn_max=0
+retry="TERM/10/KILL/5"
+
+depend() {
+    need channel-wifi-firmware
+}
+
+start_pre() {
+    local conf=/etc/wpa_supplicant/wpa_supplicant-channel.conf
+    local i=0
+
+    while ! grep -q '^network={' "$conf" 2>/dev/null ||
+          ! grep -q '^[[:space:]]*psk=' "$conf" 2>/dev/null ||
+          ! grep -q '^[[:space:]]*}$' "$conf" 2>/dev/null; do
+        i=$((i + 1))
+        [ "$i" -lt 30 ] || return 1
+        sleep 1
+    done
+
+    sed -i '/^[[:space:]]*#psk=/d' "$conf"
+    chmod 0600 "$conf"
+    mkdir -p /run/wpa_supplicant
+    ip link set wlan0 up
+}
