@@ -46,12 +46,15 @@ jobs:
           sh -n rootfs/usr/local/sbin/channel-usb-gadget
           sh -n rootfs/usr/local/sbin/channel-wifi-firmware
           sh -n rootfs/usr/local/sbin/channel-wifi-dhcp
-          sh -n rootfs/usr/local/sbin/channel-wifi
+          sh -n rootfs/usr/local/sbin/channel-wifi-config
           sh -n rootfs/usr/local/libexec/channel-udhcpc
           sh -n rootfs/etc/init.d/channel-usb-gadget
           sh -n rootfs/etc/init.d/channel-dhcp
           sh -n rootfs/etc/init.d/channel-sshd
-          sh -n rootfs/etc/init.d/channel-wifi
+          sh -n rootfs/etc/init.d/channel-wifi-firmware
+          sh -n rootfs/etc/init.d/channel-wifi-supplicant
+          sh -n rootfs/etc/init.d/channel-wifi-dhcp-client
+          sh -n rootfs/etc/init.d/channel-wifi-config
 
       - name: Install rootfs and kernel dependencies
         run: |
