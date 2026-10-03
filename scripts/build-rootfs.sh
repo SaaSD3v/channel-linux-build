@@ -62,6 +62,16 @@ tar -xzf "$APK_STATIC_PKG" -C "$APK_STATIC_DIR" sbin/apk.static
 APK_STATIC="$APK_STATIC_DIR/sbin/apk.static"
 test -x "$APK_STATIC"
 
+# Package scripts/triggers run in the target root. Give them the normal /dev
+# interface temporarily (notably /dev/null and getrandom consumers) without
+# copying host device nodes into the final filesystem image.
+cleanup_apk_dev() {
+  sudo umount "$ROOTFS/dev" 2>/dev/null || true
+}
+trap cleanup_apk_dev EXIT
+sudo mkdir -p "$ROOTFS/dev"
+sudo mount --bind /dev "$ROOTFS/dev"
+
 # Use the native static apk binary to perform package file operations. Target
 # package scripts still run inside the aarch64 root through binfmt/QEMU, but
 # ownership/mode/SUID handling is no longer emulated. This avoids QEMU failing
@@ -91,6 +101,9 @@ sudo "$APK_STATIC" \
     openssl
 
 sudo chroot "$ROOTFS" /usr/sbin/update-ca-certificates
+
+cleanup_apk_dev
+trap - EXIT
 echo "::endgroup::"
 
 echo "::group::Install Channel Alpine headless configuration"
