@@ -24,7 +24,7 @@ The repository is organized so the complete build remains available while each m
 | Branch | Purpose | Workflow | Main artifact |
 | --- | --- | --- | --- |
 | `main` | Complete integrated build | `Build Moto G7 Play mainline Debian` | `channel-mainline-debian` |
-| `rootfs` | Debian rootfs + matching modules | `Build Debian rootfs` | `channel-debian-rootfs` |
+| `debian` | Debian rootfs + matching modules | `Build rootfs` | `channel-debian-rootfs` |
 | `kernel-mainline-7.1` | Kernel + DTB + modules + universal boot image | `Build kernel mainline 7.1` | `channel-kernel-mainline-7.1` |
 | `dtbo` | Minimal Channel DTBO | `Build channel DTBO` | `channel-dtbo` |
 | `lk2nd` | lk2nd MSM8953 image | `Build lk2nd MSM8953` | `channel-lk2nd-msm8953` |
@@ -93,7 +93,7 @@ SSH authentication belongs only to workflows that generate a userspace rootfs. T
 
 ## Separated rootfs build
 
-The `rootfs` branch generates the Debian rootfs with the matching kernel modules independently.
+The `debian` branch generates the Debian rootfs with the matching kernel modules independently.
 
 It compiles a kernel internally because the rootfs needs the matching kernel release and module tree, but it publishes only the rootfs-related outputs as its main artifact.
 
@@ -216,7 +216,8 @@ nmcli dev wifi connect "<network-name>" password "<password>"
 
 NetworkManager stores the connection profile and can reconnect on later boots.
 No Channel-specific supplicant, Wi-Fi DHCP client, config watcher, or udhcpc
-hook is used.
+hook is used. NetworkManager owns `wlan0`; `usb0` is explicitly unmanaged so
+the Channel RNDIS helper retains `172.16.42.1/24` without a competing network manager.
 
 ## USB network configuration
 
@@ -265,7 +266,7 @@ These directory READMEs complement this main project README; they are not intend
 
 ## Recent changes
 
-The repository was reorganized so the complete build remains on `main` while rootfs, kernel, DTBO, and lk2nd can also be built independently.
+The repository is organized so the complete build remains on `main` while Debian rootfs, kernel, DTBO, and lk2nd can also be built independently.
 
 The selectable SSH authentication modes are wired only into workflows that build a rootfs; the kernel workflow is userspace-independent and has no SSH inputs. The previous `disabled` choice was replaced by `open-root-usb`, which permits direct root SSH only on the USB RNDIS address; push builds retain automatic public-key behavior.
 
