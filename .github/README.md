@@ -1,10 +1,5 @@
 # GitHub automation
 
-This directory contains repository automation used by GitHub Actions.
+On the `ubuntu` branch, the integrated workflow builds the Channel kernel/lk2nd/DTBO plus the Ubuntu Minimal rootfs. The rootfs workflow is available for a rootfs-focused manual build.
 
-The actual workflow definitions live in `.github/workflows/`. Which workflow files are present depends on the branch:
-
-- `main` exposes the integrated build plus the manual launchers for the separated builds.
-- Each component branch keeps only its component workflow.
-
-No device build output is stored in this directory.
+Device runtime fixes live in the rootfs overlay and distro configuration; the workflows only assemble and validate them.
