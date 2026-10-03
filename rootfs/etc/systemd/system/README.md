@@ -22,11 +22,12 @@ These files are build inputs; the generated rootfs contains the enabled units.
 read-only, exposes the validated WCNSS firmware/NV files under `/lib/firmware`,
 then starts the WCNSS remote processor and `wcn36xx`.
 
-When CI Wi-Fi credentials are supplied, `channel-wifi-supplicant.service`
-associates `wlan0` and `channel-wifi-dhcp-client.service` obtains and renews
-IPv4 configuration with the validated BusyBox udhcpc hook.
+NetworkManager owns `wlan0`, association, DHCP, routes and DNS. The firmware
+service is ordered before NetworkManager so the validated WCNSS path is ready
+before normal Wi-Fi management begins.
+
+Use `nmcli dev wifi list` and `nmcli dev wifi connect <SSID> password <PASSWORD>`
+to configure Wi-Fi at runtime.
 
 `systemd-timesyncd` is enabled so the broken hardware RTC is corrected after
 network connectivity becomes available.
-
-- `channel-wifi-config.path` — watches for `/etc/wpa_supplicant/wpa_supplicant-channel.conf` and triggers the DHCP service; systemd dependencies then start the supplicant and WCNSS firmware in order.
