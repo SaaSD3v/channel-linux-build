@@ -8,7 +8,6 @@ The kernel, Channel DTB, WCN36xx fix, lk2nd, DTBO and Android boot-image layout 
 
 - Alpine 3.24.2 aarch64 minirootfs;
 - OpenRC instead of systemd;
-- `mkinitfs` instead of `initramfs-tools`;
 - `chronyd` instead of `systemd-timesyncd`;
 - Alpine `apk` packages for OpenSSH, `wpa_supplicant`, dnsmasq, networking and utilities;
 - root filesystem label `alpine-rootfs`;
@@ -23,10 +22,10 @@ The rootfs bootstrap verifies the official Alpine minirootfs SHA-256 before extr
 1. the Channel mainline kernel and modules;
 2. lk2nd for MSM8953/SDM632;
 3. the minimal Channel DTBO;
-4. the Alpine rootfs and matching Alpine `mkinitfs` initramfs;
+4. the Alpine rootfs with the matching kernel modules;
 5. `boot-channel.img`.
 
-The final rootfs artifact is `alpine-channel-rootfs.ext4.zst`. The boot command line uses `root=LABEL=alpine-rootfs rootfstype=ext4 rootwait rw`.
+The final rootfs artifact is `alpine-channel-rootfs.ext4.zst`. The shared boot image contains no initramfs and mounts the Channel root partition with `root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b rootfstype=ext4 rootwait rw`; the `alpine-rootfs` label is kept only for filesystem identification.
 
 ## USB SSH
 
