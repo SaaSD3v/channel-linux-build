@@ -4,6 +4,26 @@ on:
   push:
     branches: [kernel-mainline-7.1]
   workflow_dispatch:
+    inputs:
+      ssh_auth:
+        description: SSH authentication mode (open-root-usb = direct root login on USB only)
+        required: true
+        type: choice
+        default: generated-key
+        options:
+          - generated-key
+          - public-key-input
+          - public-key-secret
+          - generated-password
+          - password-secret
+          - generated-key+generated-password
+          - public-key-input+password-secret
+          - public-key-secret+password-secret
+          - open-root-usb
+      ssh_public_key:
+        description: Public key to install when using a public-key-input mode
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -121,7 +141,8 @@ jobs:
           OUT_DIR: ${{ github.workspace }}/out
           WORK_DIR: ${{ github.workspace }}/.work
           KERNEL_RELEASE: ${{ env.KERNEL_RELEASE }}
-          SSH_AUTH_MODE: auto
+          SSH_AUTH_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.ssh_auth || 'auto' }}
+          SSH_PUBLIC_KEY_INPUT: ${{ inputs.ssh_public_key }}
           SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
           WIFI_SSID: ${{ secrets.WIFI_SSID }}
           WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
