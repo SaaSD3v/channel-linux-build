@@ -6,16 +6,16 @@ This directory contains the project build helpers used by the workflows.
 
 Configures and builds the Channel kernel from an already-cloned kernel tree. It merges `config/channel-mainline.config`, verifies required built-in options, builds the kernel/DTBs/modules, and writes the kernel release and selected build outputs to `OUT_DIR`.
 
-The main, separated kernel, and rootfs workflows use this helper for kernel configuration and compilation. It applies the validated `wcn3620-fix.patch` and verifies the Channel WCNSS configuration.
+The integrated, separated kernel, and rootfs workflows use this helper for kernel configuration and compilation. It applies the validated `wcn3620-fix.patch` and verifies required built-in/module states, including the Channel WCNSS path.
 
 ## `build-rootfs.sh`
 
 Creates the Debian Trixie ARM64 rootfs, copies the `rootfs/` overlay, installs the kernel modules, validates the target sshd configuration, generates the initramfs, and produces the compressed ext4 image.
 
-The exact SSH authentication behavior depends on the version of this script in the branch. The separated `rootfs` branch includes the selectable authentication modes documented in its top-level README.
+The main and `rootfs` branches use the same selectable SSH authentication implementation. Manual workflows can select key, password, combined, or disabled modes; automatic builds preserve the public-key-first behavior.
 
 ## `build-bootimg.sh`
 
 Helper for packing `boot-channel.img` from a built kernel, Channel DTB, and matching initramfs.
 
-The known integrated `main` workflow currently packs its boot image inline with a pinned AOSP `mkbootimg`; this helper is retained as a repository build helper and is not substituted for that proven integrated step.
+The integrated `main` workflow uses this helper as the single boot-image packer and supplies the pinned AOSP `mkbootimg.py`. The helper also writes `kernel-cmdline.txt` so the exact boot command line is published with the artifacts.
