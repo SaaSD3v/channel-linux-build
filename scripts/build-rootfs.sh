@@ -76,19 +76,6 @@ sudo mount --bind /dev "$ROOTFS/dev"
 # package scripts still run inside the aarch64 root through binfmt/QEMU, but
 # ownership/mode/SUID handling is no longer emulated. This avoids QEMU failing
 # while apk preserves dbus-daemon-launch-helper permissions.
-#
-# Package triggers such as eudev expect a real /dev/null (and may inspect proc
-# or sysfs), so expose the runner namespaces only for the package transaction.
-cleanup_pkg_mounts() {
-  sudo umount -R "$ROOTFS/dev" 2>/dev/null || true
-  sudo umount "$ROOTFS/proc" 2>/dev/null || true
-  sudo umount "$ROOTFS/sys" 2>/dev/null || true
-}
-trap cleanup_pkg_mounts EXIT
-sudo mount --bind /dev "$ROOTFS/dev"
-sudo mount -t proc proc "$ROOTFS/proc"
-sudo mount -t sysfs sysfs "$ROOTFS/sys"
-
 sudo "$APK_STATIC" \
   --root "$ROOTFS" \
   --arch "$ALPINE_ARCH" \
@@ -114,8 +101,6 @@ sudo "$APK_STATIC" \
     openssl
 
 sudo chroot "$ROOTFS" /usr/sbin/update-ca-certificates
-cleanup_pkg_mounts
-trap - EXIT
 echo "::endgroup::"
 
 echo "::group::Install Channel Alpine headless configuration"
