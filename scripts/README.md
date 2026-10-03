@@ -10,12 +10,12 @@ The integrated, separated kernel, and rootfs workflows use this helper for kerne
 
 ## `build-rootfs.sh`
 
-Creates the Debian Trixie ARM64 rootfs, copies the `rootfs/` overlay, installs the kernel modules, validates the target sshd configuration, generates the initramfs, and produces the compressed ext4 image.
+Creates the Debian Trixie ARM64 rootfs, copies the `rootfs/` overlay, installs the matching kernel modules, validates the target sshd configuration, and produces the compressed ext4 image without an initramfs.
 
 The main and `rootfs` branches use the same selectable SSH authentication implementation. Manual workflows can select key, password, combined, or disabled modes; automatic builds preserve the public-key-first behavior.
 
 ## `build-bootimg.sh`
 
-Helper for packing `boot-channel.img` from a built kernel, Channel DTB, and matching initramfs.
+Helper for packing the rootfs-independent `boot-channel.img` from a built kernel and Channel DTB. It uses the fixed Channel root-partition PARTUUID and no initramfs.
 
 The integrated `main` workflow uses this helper as the single boot-image packer and supplies the pinned AOSP `mkbootimg.py`. The helper also writes `kernel-cmdline.txt` so the exact boot command line is published with the artifacts.
