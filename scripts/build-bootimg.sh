@@ -6,9 +6,9 @@ set -euo pipefail
 : "${CHANNEL_DTB:?set CHANNEL_DTB}"
 
 KREL="$KERNEL_RELEASE"
-INITRD="$OUT_DIR/initrd.img-$KREL"
 KERNEL_DTB="$OUT_DIR/Image.gz-dtb-$KREL"
 BOOTIMG="$OUT_DIR/boot-channel.img"
+CHANNEL_ROOT_PARTUUID="${CHANNEL_ROOT_PARTUUID:-76dbdefa-f243-cd22-5da5-9374e6ad318b}"
 
 if [ -n "${KERNEL_IMAGE:-}" ]; then
   KERNEL="$KERNEL_IMAGE"
@@ -19,11 +19,10 @@ fi
 
 test -s "$KERNEL"
 test -s "$CHANNEL_DTB"
-test -s "$INITRD"
 
 cat "$KERNEL" "$CHANNEL_DTB" > "$KERNEL_DTB"
 
-CMDLINE="${KERNEL_CMDLINE:-console=ttyMSM0,115200n8 root=LABEL=alpine-rootfs rootfstype=ext4 rootwait rw loglevel=7 ignore_loglevel}"
+CMDLINE="${KERNEL_CMDLINE:-console=ttyMSM0,115200n8 root=PARTUUID=$CHANNEL_ROOT_PARTUUID rootfstype=ext4 rootwait rw loglevel=7 ignore_loglevel}"
 
 if [ -n "${MKBOOTIMG_PY:-}" ]; then
   test -s "$MKBOOTIMG_PY"
@@ -36,7 +35,6 @@ fi
 "${PACKER[@]}" \
   --header_version 0 \
   --kernel "$KERNEL_DTB" \
-  --ramdisk "$INITRD" \
   --cmdline "$CMDLINE" \
   --base 0x80000000 \
   --kernel_offset 0x00008000 \
