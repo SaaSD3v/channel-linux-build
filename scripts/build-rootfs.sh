@@ -77,7 +77,7 @@ sudo chroot "$ROOTFS" /bin/sh -ec '
     openrc busybox-openrc busybox-mdev-openrc \
     openssh-server openssh-client \
     iproute2 \
-    dnsmasq \
+    dnsmasq dnsmasq-openrc \
     ca-certificates \
     kmod \
     e2fsprogs \
@@ -101,7 +101,6 @@ sudo chmod 0755 \
   "$ROOTFS/usr/local/sbin/channel-wifi-config" \
   "$ROOTFS/usr/local/libexec/channel-udhcpc" \
   "$ROOTFS/etc/init.d/channel-usb-gadget" \
-  "$ROOTFS/etc/init.d/channel-dhcp" \
   "$ROOTFS/etc/init.d/channel-sshd" \
   "$ROOTFS/etc/init.d/channel-wifi-firmware" \
   "$ROOTFS/etc/init.d/channel-wifi-supplicant" \
@@ -278,7 +277,7 @@ done
 for service in hwdrivers modules sysctl hostname bootmisc syslog localmount; do
   sudo chroot "$ROOTFS" /sbin/rc-update add "$service" boot
 done
-for service in chronyd channel-usb-gadget channel-dhcp channel-sshd channel-wifi-firmware channel-wifi-config; do
+for service in chronyd channel-usb-gadget dnsmasq channel-sshd channel-wifi-firmware channel-wifi-config; do
   sudo chroot "$ROOTFS" /sbin/rc-update add "$service" default
 done
 
