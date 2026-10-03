@@ -8,6 +8,7 @@ ConditionPathExists=/etc/wpa_supplicant/wpa_supplicant-channel.conf
 
 [Service]
 Type=simple
+ExecStartPre=/bin/sh -c 'i=0; until grep -q "^network={" /etc/wpa_supplicant/wpa_supplicant-channel.conf && grep -q "^[[:space:]]*psk=" /etc/wpa_supplicant/wpa_supplicant-channel.conf && grep -q "^}$" /etc/wpa_supplicant/wpa_supplicant-channel.conf; do i=$((i+1)); [ "$i" -ge 30 ] && exit 1; sleep 1; done'
 ExecStartPre=/bin/sh -c 'sed -i "/^[[:space:]]*#psk=/d" /etc/wpa_supplicant/wpa_supplicant-channel.conf && chmod 600 /etc/wpa_supplicant/wpa_supplicant-channel.conf'
 ExecStartPre=/usr/sbin/ip link set wlan0 up
 ExecStart=/usr/sbin/wpa_supplicant -i wlan0 -D nl80211 -c /etc/wpa_supplicant/wpa_supplicant-channel.conf
