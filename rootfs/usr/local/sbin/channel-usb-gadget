@@ -49,10 +49,10 @@ printf '0x01' > bDeviceProtocol
 
 mkdir -p strings/0x409
 SERIAL="$(sed -n '1{s/[^0-9A-Fa-f]//g;p;}' /etc/machine-id 2>/dev/null | cut -c1-16 || true)"
-[ -n "$SERIAL" ] || SERIAL=debian
+[ -n "$SERIAL" ] || SERIAL=ubuntu
 printf 'channel-%s' "$SERIAL" > strings/0x409/serialnumber
 printf 'Motorola Moto G7 Play Linux' > strings/0x409/manufacturer
-printf 'channel Debian USB RNDIS' > strings/0x409/product
+printf 'channel Ubuntu USB RNDIS' > strings/0x409/product
 
 # Microsoft OS descriptors make Windows 10 bind the in-box RNDIS driver.
 printf '1' > os_desc/use
