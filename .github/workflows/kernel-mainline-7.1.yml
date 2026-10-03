@@ -80,8 +80,8 @@ jobs:
 
       - name: Configure and build kernel
         env:
-          KERNEL_DIR: \${{ github.workspace }}/kernel
-          OUT_DIR: \${{ github.workspace }}/out
+          KERNEL_DIR: ${{ github.workspace }}/kernel
+          OUT_DIR: ${{ github.workspace }}/out
         run: |
           set -euxo pipefail
           chmod +x scripts/build-kernel.sh
@@ -117,15 +117,15 @@ jobs:
 
       - name: Build matching Debian rootfs and initramfs
         env:
-          KERNEL_DIR: \${{ github.workspace }}/kernel
-          OUT_DIR: \${{ github.workspace }}/out
-          WORK_DIR: \${{ github.workspace }}/.work
-          KERNEL_RELEASE: \${{ env.KERNEL_RELEASE }}
+          KERNEL_DIR: ${{ github.workspace }}/kernel
+          OUT_DIR: ${{ github.workspace }}/out
+          WORK_DIR: ${{ github.workspace }}/.work
+          KERNEL_RELEASE: ${{ env.KERNEL_RELEASE }}
           SSH_AUTH_MODE: auto
-          SSH_PUBLIC_KEY: \${{ secrets.SSH_PUBLIC_KEY }}
-          WIFI_SSID: \${{ secrets.WIFI_SSID }}
-          WIFI_PASSWORD: \${{ secrets.WIFI_PASSWORD }}
-          WIFI_COUNTRY: \${{ secrets.WIFI_COUNTRY }}
+          SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+          WIFI_SSID: ${{ secrets.WIFI_SSID }}
+          WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
+          WIFI_COUNTRY: ${{ secrets.WIFI_COUNTRY }}
         run: |
           set -euxo pipefail
           chmod +x scripts/build-rootfs.sh
@@ -138,11 +138,11 @@ jobs:
 
       - name: Pack boot-channel.img like main
         env:
-          KERNEL_RELEASE: \${{ env.KERNEL_RELEASE }}
-          OUT_DIR: \${{ github.workspace }}/out
-          KERNEL_IMAGE: \${{ github.workspace }}/out/Image.gz
-          CHANNEL_DTB: \${{ github.workspace }}/out/sdm632-motorola-channel.dtb
-          MKBOOTIMG_PY: \${{ github.workspace }}/aosp-mkbootimg/mkbootimg.py
+          KERNEL_RELEASE: ${{ env.KERNEL_RELEASE }}
+          OUT_DIR: ${{ github.workspace }}/out
+          KERNEL_IMAGE: ${{ github.workspace }}/out/Image.gz
+          CHANNEL_DTB: ${{ github.workspace }}/out/sdm632-motorola-channel.dtb
+          MKBOOTIMG_PY: ${{ github.workspace }}/aosp-mkbootimg/mkbootimg.py
         run: |
           set -euxo pipefail
           chmod +x scripts/build-bootimg.sh
@@ -179,12 +179,19 @@ jobs:
             out/wcn3620-fix.patch \
             > out/SHA256SUMS
 
-      - name: Upload kernel and boot artifacts
+      - name: Upload boot-channel.img
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-channel-img
+          path: out/boot-channel.img
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload remaining kernel artifacts
         uses: actions/upload-artifact@v4
         with:
           name: channel-kernel-mainline-7.1
           path: |
-            out/boot-channel.img
             out/Image.gz
             out/Image.gz-dtb
             out/Image.gz-dtb-*
