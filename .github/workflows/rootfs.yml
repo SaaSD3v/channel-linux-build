@@ -76,7 +76,7 @@ jobs:
           test -s out/kernel-release.txt
           test -s kernel/System.map
 
-      - name: Build Ubuntu minimal rootfs and initramfs
+      - name: Build Ubuntu minimal rootfs
         env:
           KERNEL_DIR: ${{ github.workspace }}/kernel
           OUT_DIR: ${{ github.workspace }}/out
@@ -96,11 +96,10 @@ jobs:
           scripts/build-rootfs.sh
 
           test -s out/ubuntu-channel-rootfs.ext4.zst
-          test -s "out/initrd.img-$KERNEL_RELEASE"
           grep -q '^distribution=ubuntu$' out/build-info.txt
           grep -q '^ubuntu_version=26.04.1$' out/build-info.txt
           grep -q '^rootfs_label=ubuntu-rootfs$' out/build-info.txt
-          sha256sum out/ubuntu-channel-rootfs.ext4.zst "out/initrd.img-$KERNEL_RELEASE" \
+          sha256sum out/ubuntu-channel-rootfs.ext4.zst \
             out/build-info.txt | tee out/SHA256SUMS.rootfs
 
       - name: Upload rootfs artifacts
@@ -109,7 +108,6 @@ jobs:
           name: channel-ubuntu-rootfs
           path: |
             out/ubuntu-channel-rootfs.ext4.zst
-            out/initrd.img-*
             out/build-info.txt
             out/SHA256SUMS.rootfs
           if-no-files-found: error
