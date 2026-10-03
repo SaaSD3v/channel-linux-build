@@ -13,6 +13,13 @@ WIFI_PASSWORD="${WIFI_PASSWORD:-}"
 WIFI_COUNTRY="${WIFI_COUNTRY:-}"
 WIFI_AUTOCONNECT=0
 
+UBUNTU_VERSION="${UBUNTU_VERSION:-26.04.1}"
+UBUNTU_CODENAME="${UBUNTU_CODENAME:-resolute}"
+UBUNTU_ARCH="${UBUNTU_ARCH:-arm64}"
+UBUNTU_BASE_URL="${UBUNTU_BASE_URL:-https://cdimage.ubuntu.com/ubuntu-base/releases/26.04/release}"
+UBUNTU_BASE_TARBALL="ubuntu-base-${UBUNTU_VERSION}-base-${UBUNTU_ARCH}.tar.gz"
+UBUNTU_BASE_SHA256="${UBUNTU_BASE_SHA256:-5a1906794ced63a71a8119c3f211ef5f0bbe0a243001b4bbd41fdf80c5b219fd}"
+
 if [ -n "$WIFI_SSID" ] || [ -n "$WIFI_PASSWORD" ]; then
   if [ -z "$WIFI_SSID" ] || [ -z "$WIFI_PASSWORD" ]; then
     echo "WIFI_SSID and WIFI_PASSWORD must both be set for Wi-Fi autoconnect" >&2
@@ -42,15 +49,55 @@ KREL="$KERNEL_RELEASE"
 mkdir -p "$WORK_DIR" "$OUT_DIR"
 sudo rm -rf "$ROOTFS"
 
-echo "::group::Create Debian 13 (trixie) arm64 rootfs"
-sudo mmdebstrap \
-  --architectures=arm64 \
-  --variant=minbase \
-  --components=main \
-  --keyring=/usr/share/keyrings/debian-archive-keyring.gpg \
-  --aptopt='Apt::Install-Recommends "false"' \
-  --include=debian-archive-keyring,systemd-sysv,openssh-server,iproute2,iputils-ping,dnsmasq,ca-certificates,kmod,udev,initramfs-tools,busybox-static,e2fsprogs,util-linux,procps,less,nano,ethtool,openssh-client,iw,wpasupplicant,wireless-regdb,dbus,systemd-timesyncd \
-  trixie "$ROOTFS" https://deb.debian.org/debian
+echo "::group::Create Ubuntu Base ${UBUNTU_VERSION} ${UBUNTU_ARCH} rootfs"
+UBUNTU_BASE_PATH="$WORK_DIR/$UBUNTU_BASE_TARBALL"
+curl -fsSL --retry 3 "$UBUNTU_BASE_URL/$UBUNTU_BASE_TARBALL" -o "$UBUNTU_BASE_PATH"
+printf '%s  %s\n' "$UBUNTU_BASE_SHA256" "$UBUNTU_BASE_PATH" | sha256sum -c -
+
+sudo mkdir -p "$ROOTFS"
+sudo tar --numeric-owner -xzf "$UBUNTU_BASE_PATH" -C "$ROOTFS"
+
+# Ubuntu Base is intentionally tiny. Configure the official ARM ports archive,
+# then install only the runtime required by this headless Channel image.
+sudo tee "$ROOTFS/etc/apt/sources.list" >/dev/null <<EOF
+deb http://ports.ubuntu.com/ubuntu-ports $UBUNTU_CODENAME main universe
+deb http://ports.ubuntu.com/ubuntu-ports $UBUNTU_CODENAME-updates main universe
+deb http://ports.ubuntu.com/ubuntu-ports $UBUNTU_CODENAME-security main universe
+EOF
+sudo rm -f "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" 2>/dev/null || true
+
+sudo cp -L /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
+sudo update-binfmts --enable qemu-aarch64 || true
+if [ -x /usr/bin/qemu-aarch64-static ]; then
+  sudo install -m 0755 /usr/bin/qemu-aarch64-static "$ROOTFS/usr/bin/qemu-aarch64-static"
+fi
+
+# Prevent package postinst scripts from trying to start services inside the
+# build chroot. Services are enabled explicitly after the rootfs is configured.
+sudo tee "$ROOTFS/usr/sbin/policy-rc.d" >/dev/null <<'EOF'
+#!/bin/sh
+exit 101
+EOF
+sudo chmod 0755 "$ROOTFS/usr/sbin/policy-rc.d"
+
+sudo chroot "$ROOTFS" /bin/sh -ec '
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install -y --no-install-recommends \
+    systemd-sysv udev dbus \
+    openssh-server openssh-client \
+    iproute2 iputils-ping \
+    dnsmasq \
+    ca-certificates \
+    kmod initramfs-tools busybox-static \
+    e2fsprogs util-linux procps \
+    less nano ethtool iw \
+    wpasupplicant wireless-regdb \
+    systemd-timesyncd
+  apt-get clean
+  rm -rf /var/lib/apt/lists/*
+'
+sudo rm -f "$ROOTFS/usr/sbin/policy-rc.d"
 echo "::endgroup::"
 
 echo "::group::Install channel headless configuration"
@@ -61,11 +108,19 @@ sudo chmod 0755 "$ROOTFS/usr/local/sbin/channel-wifi-dhcp"
 sudo chmod 0755 "$ROOTFS/usr/local/libexec/channel-udhcpc"
 sudo install -d -m 0755 "$ROOTFS/etc/wpa_supplicant"
 
+if [ ! -s "$ROOTFS/etc/machine-id" ]; then
+  openssl rand -hex 16 | sudo tee "$ROOTFS/etc/machine-id" >/dev/null
+fi
+
 printf '%s\n' channel | sudo tee "$ROOTFS/etc/hostname" >/dev/null
 sudo tee "$ROOTFS/etc/hosts" >/dev/null <<'EOF'
 127.0.0.1 localhost
 127.0.1.1 channel
 ::1 localhost ip6-localhost ip6-loopback
+EOF
+
+sudo tee "$ROOTFS/etc/fstab" >/dev/null <<'EOF'
+LABEL=ubuntu-rootfs / ext4 rw,noatime 0 1
 EOF
 
 SSH_AUTH_MODE="${SSH_AUTH_MODE:-auto}"
@@ -220,11 +275,11 @@ EOF
 
 sudo ssh-keygen -A -f "$ROOTFS"
 
-# Keep SSH under ssh.service control. Debian also ships ssh.socket, which
+# Keep SSH under ssh.service control. Ubuntu also ships ssh.socket, which
 # listens independently from sshd's ListenAddress when explicitly enabled.
 sudo systemctl --root="$ROOTFS" disable ssh.socket 2>/dev/null || true
 sudo systemctl --root="$ROOTFS" disable dnsmasq.service 2>/dev/null || true
-# Debian's generic wpa_supplicant.service is D-Bus controlled and does not
+# Ubuntu's generic wpa_supplicant.service is D-Bus controlled and does not
 # configure wlan0 by itself. Channel uses the explicit interface service below.
 sudo systemctl --root="$ROOTFS" disable wpa_supplicant.service 2>/dev/null || true
 
@@ -270,7 +325,7 @@ elif [ -n "$KERNEL_DIR" ] && [ -f "$KERNEL_DIR/System.map" ]; then
 fi
 echo "::endgroup::"
 
-echo "::group::Generate small Debian initramfs"
+echo "::group::Generate small Ubuntu initramfs"
 sudo tee "$ROOTFS/etc/initramfs-tools/initramfs.conf" >/dev/null <<'EOF'
 MODULES=list
 BUSYBOX=y
@@ -347,18 +402,20 @@ USED_MB="$(sudo du -sm "$ROOTFS" | awk '{print $1}')"
 IMAGE_MB=$((USED_MB + 700))
 if [ "$IMAGE_MB" -lt 1536 ]; then IMAGE_MB=1536; fi
 
-ROOTFS_IMG="$OUT_DIR/debian-channel-rootfs.ext4"
+ROOTFS_IMG="$OUT_DIR/ubuntu-channel-rootfs.ext4"
 truncate -s "${IMAGE_MB}M" "$ROOTFS_IMG"
-sudo mkfs.ext4 -F -m 0 -L debian-rootfs -d "$ROOTFS" "$ROOTFS_IMG"
+sudo mkfs.ext4 -F -m 0 -L ubuntu-rootfs -d "$ROOTFS" "$ROOTFS_IMG"
 sudo e2fsck -fn "$ROOTFS_IMG"
 zstd -T0 -10 -f "$ROOTFS_IMG" -o "$ROOTFS_IMG.zst"
 rm -f "$ROOTFS_IMG"
 echo "::endgroup::"
 
 {
-  echo "debian_suite=trixie"
+  echo "distribution=ubuntu"
+  echo "ubuntu_version=$UBUNTU_VERSION"
+  echo "ubuntu_codename=$UBUNTU_CODENAME"
   echo "kernel_release=$KREL"
-  echo "rootfs_label=debian-rootfs"
+  echo "rootfs_label=ubuntu-rootfs"
   echo "usb_device_ip=172.16.42.1"
   echo "usb_dhcp_range=172.16.42.2-172.16.42.20"
   echo "ssh_auth=$SSH_AUTH_MODE"
