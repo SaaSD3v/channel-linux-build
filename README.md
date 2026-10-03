@@ -1,271 +1,66 @@
-# Moto G7 Play (channel) — Debian mainline bring-up
+# Moto G7 Play (channel) — Ubuntu Minimal mainline
 
-Build repository for the Motorola Moto G7 Play, codename `channel`, based on Qualcomm SDM632.
+This branch builds an Ubuntu Minimal userspace for the Motorola Moto G7 Play (`channel`, Qualcomm SDM632) while preserving the validated mainline kernel/lk2nd/DTBO flow from `main`.
 
-The repository keeps the complete integrated build on `main` and separate component builds for the rootfs, kernel, DTBO, and lk2nd. The separated workflows make it possible to rebuild only one component without removing the complete build flow that has already been used for full-device testing.
+## Userspace
 
-## Project goals
+The rootfs is based on the official **Ubuntu Base 26.04.1 LTS (Resolute) ARM64** tarball. The build verifies the pinned upstream SHA-256 before extracting it, then installs only the packages required for the headless device:
 
-The build system produces and validates the files needed for the current Channel Debian mainline bring-up:
+- systemd/udev/dbus;
+- OpenSSH;
+- iproute2 and ping;
+- dnsmasq;
+- initramfs-tools + BusyBox;
+- WCN36xx userspace tools (`iw`, `wpasupplicant`, `wireless-regdb`);
+- systemd-timesyncd;
+- small administration utilities.
 
-- mainline ARM64 kernel for the Channel device tree;
-- matching kernel modules and initramfs;
-- Debian 13 (Trixie) ARM64 rootfs;
-- `boot-channel.img`;
-- lk2nd for MSM8953/SDM632;
-- the minimal Channel DTBO used with lk2nd;
-- the USB RNDIS runtime configuration used by the generated rootfs;
-- source/build metadata and SHA-256 files for generated artifacts.
+No Ubuntu kernel or bootloader package is used. The rootfs receives the Channel mainline kernel modules produced by this repository.
 
-The repository is organized so the complete build remains available while each major component can also be built independently.
+The generated filesystem is:
 
-## Repository build layout
+`ubuntu-channel-rootfs.ext4.zst`
 
-| Branch | Purpose | Workflow | Main artifact |
-| --- | --- | --- | --- |
-| `main` | Complete integrated build | `Build Moto G7 Play mainline Debian` | `channel-mainline-debian` |
-| `rootfs` | Debian rootfs + initramfs | `Build Debian rootfs` | `channel-debian-rootfs` |
-| `kernel-mainline-7.1` | Kernel + DTB + modules | `Build kernel mainline 7.1` | `channel-kernel-mainline-7.1` |
-| `dtbo` | Minimal Channel DTBO | `Build channel DTBO` | `channel-dtbo` |
-| `lk2nd` | lk2nd MSM8953 image | `Build lk2nd MSM8953` | `channel-lk2nd-msm8953` |
+with filesystem label:
 
-The component workflow files are also exposed on the default `main` branch so GitHub Actions shows their manual **Run workflow** controls. Those manual launchers check out the corresponding component branch before building.
+`ubuntu-rootfs`
 
-## Complete integrated build on `main`
+## USB SSH
 
-The integrated workflow is `.github/workflows/build.yml`.
+The USB behavior intentionally matches the Debian branch:
 
-A single run performs the complete build sequence:
+- RNDIS gadget on `usb0`;
+- device address `172.16.42.1/24`;
+- dnsmasq gives the Windows/Linux host `172.16.42.2` through `172.16.42.20`;
+- sshd listens only on `172.16.42.1`.
 
-1. validates the repository build scripts;
-2. installs the complete build dependency set;
-3. resolves or restores the reusable kernel checkpoint;
-4. discovers the kernel source branch that contains the Channel DTS;
-5. configures and builds the kernel, DTBs, and modules;
-6. builds lk2nd for `lk2nd-msm8953`;
-7. builds the minimal Channel DTBO;
-8. builds the Debian rootfs and matching initramfs;
-9. packs `boot-channel.img`;
-10. performs the final static checks;
-11. publishes the build artifacts and, when generated, the temporary SSH test key.
+The expected host behavior is automatic DHCP; a manual Windows IPv4 address should not be required.
 
-This integrated workflow remains the full-build path. The separated workflows do not replace it.
+## Wi-Fi
 
-## Integrated build artifacts
+The Debian service split is kept unchanged:
 
-### `channel-mainline-debian`
+`channel-wifi-firmware.service` -> `channel-wifi-supplicant.service` -> `channel-wifi-dhcp-client.service`
 
-The main artifact is retained for 14 days.
+and `channel-wifi-config.path` watches:
 
-It contains:
+`/etc/wpa_supplicant/wpa_supplicant-channel.conf`
 
-- `boot-channel.img` — final boot image packed from the kernel/DTB and matching initramfs;
-- `lk2nd-msm8953.img` — lk2nd image compiled for the target used by Channel;
-- `dtbo-motorola-channel.img` — minimal DTBO generated for the lk2nd Channel flow;
-- `Image.gz` — compressed ARM64 kernel image;
-- `Image.gz-dtb` — kernel image concatenated with the compiled Channel DTB;
-- `*.dtb` — compiled Channel device tree;
-- `initrd.img-*` — initramfs generated for the kernel release from the same run;
-- `debian-channel-rootfs.ext4.zst` — compressed Debian ext4 rootfs image;
-- `kernel-modules-*.tar.zst` — modules matching the built kernel;
-- `kernel.config` — final integrated kernel configuration;
-- `System.map` — symbol map for the built kernel;
-- `kernel-release.txt` — exact kernel release string;
-- `source-report.txt` — selected kernel source/ref and build review information;
-- `lk2nd-commit.txt` — exact lk2nd commit used by the run;
-- `dtbo-lk2nd-commit.txt` — exact DTBO source commit used by the run;
-- `build-info.txt` — metadata written while building the rootfs;
-- `SHA256SUMS*` — hashes generated by the workflow.
-
-### `channel-ssh-test-key`
-
-The integrated build uses the existing public-key-only rootfs behavior.
-
-If the `SSH_PUBLIC_KEY` repository secret is configured, that public key is installed in the generated rootfs.
-
-If the secret is not configured, the build generates an isolated Ed25519 test key and publishes:
-
-- `channel_test_ed25519`;
-- `channel_test_ed25519.pub`.
-
-This credential artifact is retained for 1 day.
-
-The integrated workflow, the separated `rootfs` workflow, and the `kernel-mainline-7.1` workflow share the same SSH authentication implementation. Manual runs expose the same selectable authentication modes; push builds keep the automatic key behavior.
-
-## Separated rootfs build
-
-The `rootfs` branch generates the Debian rootfs and matching initramfs independently.
-
-It compiles a kernel internally because the rootfs needs the matching kernel release and module tree, but it publishes only the rootfs-related outputs as its main artifact.
-
-The manual workflows expose the same SSH authentication controls:
-
-- `generated-key`;
-- `public-key-input`;
-- `public-key-secret`;
-- `generated-password`;
-- `password-secret`;
-- `generated-key+generated-password`;
-- `public-key-input+password-secret`;
-- `public-key-secret+password-secret`;
-- `open-root-usb`.
-
-Generated credentials are published only when the selected mode actually creates them. Generated key/password artifacts are retained for 1 day.
-
-### SSH authentication inputs
-
-The generated rootfs always keeps sshd bound to the USB RNDIS address:
-
-`172.16.42.1`
-
-It does not intentionally expose sshd on the Wi-Fi address.
-
-Use the following workflow inputs/secrets according to the selected mode:
-
-| `ssh_auth` | Required input/secret | Connection |
-| --- | --- | --- |
-| `generated-key` | none | download the generated Ed25519 key artifact and use `ssh -i <key> root@172.16.42.1` |
-| `public-key-input` | workflow input `ssh_public_key` | use the matching private key |
-| `public-key-secret` | repository secret `SSH_PUBLIC_KEY` | use the matching private key |
-| `generated-password` | none | download the generated password artifact and use `ssh root@172.16.42.1` |
-| `password-secret` | repository secret `SSH_PASSWORD` | use `ssh root@172.16.42.1` and enter that password |
-| `generated-key+generated-password` | none | either generated credential can be used |
-| `public-key-input+password-secret` | `ssh_public_key` input + `SSH_PASSWORD` secret | key or password |
-| `public-key-secret+password-secret` | `SSH_PUBLIC_KEY` + `SSH_PASSWORD` secrets | key or password |
-| `open-root-usb` | none | direct `ssh root@172.16.42.1`, without key or password |
-
-`open-root-usb` is intended for local bring-up and recovery. It keeps the Unix root password non-empty so the serial/local login path is not opened with a blank password; the passwordless behavior is restricted to the USB-bound sshd configuration. Any computer physically attached to the USB RNDIS interface can obtain root access while this mode is enabled.
-
-The old `disabled` choice is no longer a supported workflow mode. On a headless bring-up image, completely disabling SSH removes the primary recovery path, so it was replaced by `open-root-usb`.
-
-For push-triggered builds, `SSH_AUTH_MODE=auto` remains internal behavior: the build uses `SSH_PUBLIC_KEY` when that secret exists, otherwise it generates a temporary Ed25519 key.
-
-## Kernel build
-
-The project kernel source is:
-
-`https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git`
-
-The integrated `main` workflow clones the explicit `channel` kernel branch and uses the same `scripts/build-kernel.sh` helper as the component builds. That helper applies the validated `wcn3620-fix.patch`; the resulting DTB is rejected unless the WCNSS IRIS compatible is `qcom,wcn3620`, matching the tested 19.2 MHz configuration.
-
-The project-specific configuration fragment is:
-
-`config/channel-mainline.config`
-
-The fragment also pins the validated WCNSS path explicitly: WCN36XX, WCNSS PIL/control, Qualcomm SMD/SMEM/SMP2P/SMSM, cfg80211 and mac80211. The build helper verifies their final built-in/module states so an upstream defconfig change cannot silently remove Channel Wi-Fi support.
-
-It is merged on top of the ARM64 defconfig and carries the storage, initramfs, USB gadget, RNDIS, networking, and bring-up options required by the current build.
-
-The integrated and separated kernel builds use the same validated Channel Wi-Fi patch. The separated kernel build publishes the kernel image, Channel DTB, combined kernel+DTB image, matching modules, configuration, release string, source revision, `System.map`, the applied patch, and hashes.
-
-## lk2nd
-
-The build uses the upstream lk2nd repository:
-
-`https://github.com/msm8916-mainline/lk2nd.git`
-
-Current reference:
-
-`23.1`
-
-Build target:
-
-`lk2nd-msm8953`
-
-The build validates that the generated image contains the Channel device references before publishing it.
-
-The earlier separated lk2nd workflow initially missed the DT compiler dependency. That workflow was corrected by restoring `device-tree-compiler` and `libfdt-dev`, matching the dependency set already present in the integrated build.
-
-## Channel DTBO
-
-The minimal DTBO is built from:
-
-`https://github.com/barni2000/dtbo-lk2nd.git`
-
-Target output:
-
-`dtbo-motorola-channel.img`
-
-The separated DTBO artifact also contains the exact source commit and SHA-256 hash so the downloaded image can be traced back to the revision used by the run.
-
-## Debian rootfs
-
-The generated rootfs is Debian 13 (Trixie) ARM64.
-
-The build creates an ext4 image with label:
-
-`debian-rootfs`
-
-The integrated boot command line uses the root filesystem by label and waits for the storage device before mounting it.
-
-The rootfs build installs the matching kernel modules, creates the matching initramfs, applies the repository overlay under `rootfs/`, validates the target sshd configuration, and then creates the compressed ext4 image.
-
-
-### First Wi-Fi connection
-
-The image already contains the Channel Wi-Fi firmware setup, `wcn36xx`, `wpa_supplicant`, DHCP handling, DNS handling, and time synchronization. No extra package installation or helper command is required.
-
-When no Wi-Fi credentials were embedded by CI, configure the network with the standard Debian tool:
+Runtime setup is the same:
 
 ```sh
-wpa_passphrase "<network-name>" > /etc/wpa_supplicant/wpa_supplicant-channel.conf
+wpa_passphrase "<network-name>" "<password>" > /etc/wpa_supplicant/wpa_supplicant-channel.conf
+chmod 600 /etc/wpa_supplicant/wpa_supplicant-channel.conf
 ```
 
-Enter the Wi-Fi passphrase when prompted. The systemd path watcher detects the configuration file and triggers the DHCP client; its existing dependencies bring up the supplicant and stock WCNSS firmware in the correct order. Before starting Wi-Fi the supplicant service removes the plaintext `#psk=` comment generated by `wpa_passphrase` and changes the file mode to `0600`. After DHCP installs IP, route, and DNS, the DHCP hook immediately restarts `systemd-timesyncd` so a device that booted with its RTC near 1970 retries network time synchronization as soon as connectivity is available.
+The path unit starts the dependency chain when the file exists. Stock modem/vendor WCNSS firmware is mounted read-only just like on Debian.
 
-The configuration persists across reboot. CI-provided `WIFI_SSID` and `WIFI_PASSWORD` remain optional; when supplied, the same standard configuration file is generated during the build and the same runtime path is used.
+## Build
 
-## USB network configuration
+The integrated workflow builds the kernel, modules, lk2nd, Channel DTBO, Ubuntu rootfs/initramfs and `boot-channel.img`.
 
-The generated rootfs uses the Channel configfs gadget helper stored at:
+The default boot cmdline uses:
 
-`rootfs/usr/local/sbin/channel-usb-gadget`
+`root=LABEL=ubuntu-rootfs rootfstype=ext4 rootwait rw`
 
-The current runtime configuration creates a single RNDIS function and includes Microsoft OS descriptors.
-
-The device-side address is:
-
-`172.16.42.1/24`
-
-The DHCP service provides host addresses from:
-
-`172.16.42.2` through `172.16.42.20`
-
-The related files are kept under:
-
-- `rootfs/usr/local/sbin/`;
-- `rootfs/etc/systemd/system/`;
-- `rootfs/etc/ssh/`.
-
-Each of those directories now contains its own README describing the files maintained there.
-
-## Storage and boot model
-
-The generated rootfs is a standalone ext4 image labeled `debian-rootfs`.
-
-The current boot image expects that label and uses `rootwait` so the kernel waits for the root filesystem to become available. `scripts/build-bootimg.sh` is the canonical packer used by the integrated workflow, so the boot cmdline is defined in one place.
-
-The repository does not perform an automatic device repartitioning step. Storage placement and flashing remain separate from the build itself.
-
-## Repository directories
-
-The repository now includes local documentation in each relevant directory:
-
-- `.github/` — GitHub automation overview;
-- `.github/workflows/` — workflow-specific documentation;
-- `config/` — kernel configuration fragment documentation;
-- `scripts/` — build helper documentation;
-- `rootfs/` — generated-rootfs overlay documentation;
-- nested `rootfs/etc/`, `rootfs/usr/`, systemd, sshd, and helper directories — documentation for the files stored at each level.
-
-These directory READMEs complement this main project README; they are not intended to replace it.
-
-## Recent changes
-
-The repository was reorganized so the complete build remains on `main` while rootfs, kernel, DTBO, and lk2nd can also be built independently.
-
-The selectable SSH authentication modes are wired into the manual integrated, rootfs, and kernel workflows. The previous `disabled` choice was replaced by `open-root-usb`, which permits direct root SSH only on the USB RNDIS address; push builds retain automatic public-key behavior.
-
-The component workflows are also exposed from `main` as manual launchers, and the kernel launcher now mirrors the specialized branch's Wi-Fi validation and patch provenance checks.
-
-Documentation was expanded across the repository. The main README remains the project overview, while per-directory READMEs document the purpose of the files stored in each folder.
+SSH authentication modes from the Debian branch are preserved, including `open-root-usb` for bring-up.
