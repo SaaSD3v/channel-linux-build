@@ -269,7 +269,7 @@ jobs:
           cp dtbo-lk2nd/build/dtbo-motorola-channel.img out/dtbo-motorola-channel.img
           git -C dtbo-lk2nd rev-parse HEAD > out/dtbo-lk2nd-commit.txt
 
-      - name: Build Alpine rootfs and initramfs
+      - name: Build Alpine rootfs
         env:
           KERNEL_DIR: ${{ github.workspace }}/kernel
           OUT_DIR: ${{ github.workspace }}/out
@@ -292,7 +292,7 @@ jobs:
           export KERNEL_SYSTEM_MAP_FILE="$GITHUB_WORKSPACE/out/System.map"
           scripts/build-rootfs.sh
 
-      - name: Pack lk2nd Linux boot image
+      - name: Pack rootfs-independent boot image
         env:
           KERNEL_RELEASE: ${{ env.KERNEL_RELEASE }}
           OUT_DIR: ${{ github.workspace }}/out
@@ -307,12 +307,14 @@ jobs:
           test -s out/boot-channel.img
           test -s "out/Image.gz-dtb-$KERNEL_RELEASE"
           test -s out/kernel-cmdline.txt
+          grep -q 'root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b' out/kernel-cmdline.txt
+          ! grep -q 'root=LABEL=' out/kernel-cmdline.txt
           file out/boot-channel.img
 
           rm -rf /tmp/unpacked-boot
           python3 aosp-mkbootimg/unpack_bootimg.py --boot_img out/boot-channel.img --out /tmp/unpacked-boot
           test -s /tmp/unpacked-boot/kernel
-          test -s /tmp/unpacked-boot/ramdisk
+          test ! -s /tmp/unpacked-boot/ramdisk
 
           {
             echo
@@ -365,7 +367,6 @@ jobs:
             out/Image.gz
             out/Image.gz-dtb
             out/*.dtb
-            out/initrd.img-*
             out/alpine-channel-rootfs.ext4.zst
             out/build-info.txt
             out/source-report.txt
