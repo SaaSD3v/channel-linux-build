@@ -56,16 +56,20 @@ Manual builds support the existing authentication modes:
 
 The Channel WCNSS flow is preserved. `channel-wifi-firmware` mounts the stock modem/vendor partitions read-only, exposes the WCNSS firmware/NV files, starts `qcom_wcnss_pil`, then loads `wcn36xx`.
 
-OpenRC runs `channel-wifi`, which waits for:
+The Alpine branch keeps the same service split used by Debian:
+
+`channel-wifi-firmware` -> `channel-wifi-supplicant` -> `channel-wifi-dhcp-client`
+
+`channel-wifi-config` is the OpenRC equivalent of Debian's `channel-wifi-config.path`. It watches for:
 
 `/etc/wpa_supplicant/wpa_supplicant-channel.conf`
 
-When the file appears it sanitizes permissions, prepares WCNSS firmware, starts `wpa_supplicant`, waits for association, then runs BusyBox `udhcpc`.
+When the file appears, the watcher starts the DHCP-client service; OpenRC dependencies then start the supplicant and firmware services in the same order as the Debian systemd units.
 
 To configure Wi-Fi at runtime:
 
 ```sh
-wpa_passphrase "<network-name>" > /etc/wpa_supplicant/wpa_supplicant-channel.conf
+wpa_passphrase "<network-name>" "<password>" > /etc/wpa_supplicant/wpa_supplicant-channel.conf
 chmod 600 /etc/wpa_supplicant/wpa_supplicant-channel.conf
 ```
 
