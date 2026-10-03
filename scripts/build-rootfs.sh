@@ -341,7 +341,7 @@ if [ "$WIFI_AUTOCONNECT" -eq 1 ]; then
     if [ -n "$WIFI_COUNTRY" ]; then
       printf 'country=%s\n' "$WIFI_COUNTRY"
     fi
-    printf '%s\n' "$WIFI_PASSWORD" | sudo chroot "$ROOTFS" /usr/bin/wpa_passphrase "$WIFI_SSID" | \
+    printf '%s\n' "$WIFI_PASSWORD" | sudo chroot "$ROOTFS" /sbin/wpa_passphrase "$WIFI_SSID" | \
       sed '/^[[:space:]]*#psk=/d'
   } | sudo tee "$ROOTFS/etc/wpa_supplicant/wpa_supplicant-channel.conf" >/dev/null
   sudo chmod 0600 "$ROOTFS/etc/wpa_supplicant/wpa_supplicant-channel.conf"
