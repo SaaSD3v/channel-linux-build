@@ -49,7 +49,7 @@ sudo mmdebstrap \
   --components=main \
   --keyring=/usr/share/keyrings/debian-archive-keyring.gpg \
   --aptopt='Apt::Install-Recommends "false"' \
-  --include=debian-archive-keyring,systemd-sysv,openssh-server,iproute2,iputils-ping,dnsmasq,ca-certificates,kmod,udev,initramfs-tools,busybox-static,e2fsprogs,util-linux,procps,less,nano,ethtool,openssh-client,iw,wpasupplicant,wireless-regdb,dbus,systemd-timesyncd \
+  --include=debian-archive-keyring,systemd-sysv,openssh-server,iproute2,iputils-ping,dnsmasq,ca-certificates,kmod,udev,busybox-static,e2fsprogs,util-linux,procps,less,nano,ethtool,openssh-client,iw,wpasupplicant,wireless-regdb,dbus,systemd-timesyncd \
   trixie "$ROOTFS" https://deb.debian.org/debian
 echo "::endgroup::"
 
@@ -270,24 +270,7 @@ elif [ -n "$KERNEL_DIR" ] && [ -f "$KERNEL_DIR/System.map" ]; then
 fi
 echo "::endgroup::"
 
-echo "::group::Generate small Debian initramfs"
-sudo tee "$ROOTFS/etc/initramfs-tools/initramfs.conf" >/dev/null <<'EOF'
-MODULES=list
-BUSYBOX=y
-KEYMAP=n
-COMPRESS=gzip
-DEVICE=
-NFSROOT=auto
-RUNSIZE=10%
-EOF
-
-# Storage and ext4 are intentionally required built-in by the kernel config.
-# MODULES=list avoids probing the x86 GitHub runner from inside the arm64 chroot.
-# Do not force built-in drivers into initramfs-tools' module list.
-sudo tee "$ROOTFS/etc/initramfs-tools/modules" >/dev/null <<'EOF'
-# channel: no forced modules; critical root-storage drivers are built into the kernel
-EOF
-
+echo "::group::Finalize Debian rootfs"
 sudo update-binfmts --enable qemu-aarch64 || true
 if [ -x /usr/bin/qemu-aarch64-static ]; then
   sudo install -m 0755 /usr/bin/qemu-aarch64-static "$ROOTFS/usr/bin/qemu-aarch64-static"
@@ -320,26 +303,14 @@ sudo mount --bind /dev "$ROOTFS/dev"
 sudo mount -t proc proc "$ROOTFS/proc"
 sudo mount -t sysfs sysfs "$ROOTFS/sys"
 
-# Validate the target daemon with the target arm64 userspace before sealing
-# the image. sshd expects its runtime privilege-separation directory, which
-# systemd creates at boot but is absent in an offline chroot.
 sudo install -d -m 0755 "$ROOTFS/run/sshd"
 sudo chroot "$ROOTFS" /usr/sbin/sshd -t
-sudo chroot "$ROOTFS" /bin/sh -c "depmod '$KREL'; update-initramfs -c -k '$KREL'"
 
 cleanup_mounts
 trap - EXIT
 
 # qemu-aarch64-static is a host-side helper and must not ship in the target image.
 sudo rm -f "$ROOTFS/usr/bin/qemu-aarch64-static"
-
-sudo cp "$ROOTFS/boot/initrd.img-$KREL" "$OUT_DIR/initrd.img-$KREL"
-INITRD_SIZE="$(stat -c %s "$OUT_DIR/initrd.img-$KREL")"
-if [ "$INITRD_SIZE" -gt $((48 * 1024 * 1024)) ]; then
-  echo "initramfs is unexpectedly large: $INITRD_SIZE bytes" >&2
-  exit 1
-fi
-echo "initramfs: $INITRD_SIZE bytes"
 echo "::endgroup::"
 
 echo "::group::Create ext4 rootfs image"
