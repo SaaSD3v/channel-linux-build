@@ -14,7 +14,7 @@ The workflow clones:
 
 using the `channel` branch, then builds the Channel kernel with the project configuration and helper script.
 
-The kernel, DTB, modules, configuration, and symbol map are produced together so the artifact represents one consistent build.
+The kernel, DTB, modules, configuration, symbol map, and rootfs-independent `boot-channel.img` are produced together so the artifact represents one consistent kernel-side build.
 
 ### Channel Wi-Fi device-tree fix
 
@@ -49,6 +49,8 @@ Retained for 14 days.
 
 It contains:
 
+- `boot-channel.img` — rootfs-independent Android boot image with kernel + Channel DTB and no initramfs;
+- `kernel-cmdline.txt` — boot command line using the fixed Channel root-partition PARTUUID;
 - `Image.gz` — compressed ARM64 kernel image;
 - `Image.gz-dtb` — kernel image concatenated with the Channel DTB;
 - `sdm632-motorola-channel.dtb` — compiled Channel DTB;
@@ -69,6 +71,6 @@ The launcher checks out `kernel-mainline-7.1` before building.
 
 ## Changes made in this branch
 
-This branch was created so the kernel can be rebuilt and downloaded without also building rootfs, lk2nd, or DTBO.
+This branch builds the kernel side independently from every distro. It does not build a rootfs, initramfs, lk2nd, DTBO, SSH configuration, or userspace credentials.
 
-The workflow publishes only kernel-related outputs.
+The generated `boot-channel.img` mounts `PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b` directly and therefore can be reused with Debian, Alpine, or Ubuntu on that root partition as long as the rootfs contains the matching kernel modules.
