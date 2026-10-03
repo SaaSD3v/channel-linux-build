@@ -23,7 +23,7 @@ test -s "$INITRD"
 
 cat "$KERNEL" "$CHANNEL_DTB" > "$KERNEL_DTB"
 
-CMDLINE="${KERNEL_CMDLINE:-console=ttyMSM0,115200n8 root=LABEL=debian-rootfs rootfstype=ext4 rootwait rw loglevel=7 ignore_loglevel}"
+CMDLINE="${KERNEL_CMDLINE:-console=ttyMSM0,115200n8 root=LABEL=ubuntu-rootfs rootfstype=ext4 rootwait rw loglevel=7 ignore_loglevel}"
 
 if [ -n "${MKBOOTIMG_PY:-}" ]; then
   test -s "$MKBOOTIMG_PY"
