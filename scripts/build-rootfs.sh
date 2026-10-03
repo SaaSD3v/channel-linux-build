@@ -74,20 +74,17 @@ fi
 sudo chroot "$ROOTFS" /bin/sh -ec '
   apk update
   apk add --no-cache \
-    alpine-base \
     openrc \
     openssh-server openssh-client \
-    iproute2 iputils \
+    iproute2 \
     dnsmasq \
     ca-certificates \
     kmod \
     e2fsprogs \
-    util-linux \
     procps \
     less nano \
     ethtool iw \
     wpa_supplicant wireless-regdb \
-    dbus \
     chrony \
     mkinitfs \
     openssl
@@ -278,7 +275,7 @@ done
 for service in hwdrivers modules sysctl hostname bootmisc syslog localmount; do
   sudo chroot "$ROOTFS" /sbin/rc-update add "$service" boot
 done
-for service in dbus chronyd channel-usb-gadget channel-dhcp channel-sshd channel-wifi; do
+for service in chronyd channel-usb-gadget channel-dhcp channel-sshd channel-wifi; do
   sudo chroot "$ROOTFS" /sbin/rc-update add "$service" default
 done
 
