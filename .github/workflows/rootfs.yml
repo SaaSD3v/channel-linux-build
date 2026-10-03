@@ -116,8 +116,12 @@ jobs:
 
           test -s out/debian-channel-rootfs.ext4.zst
           test -s "out/initrd.img-$KERNEL_RELEASE"
-          grep -q '^wifi_firmware=stock-modem-vendor-readonly
+          grep -q '^wifi_firmware=stock-modem-vendor-readonly' out/build-info.txt
+          grep -q '^time_sync=systemd-timesyncd' out/build-info.txt
+          sha256sum out/debian-channel-rootfs.ext4.zst "out/initrd.img-$KERNEL_RELEASE" \
+            out/build-info.txt | tee out/SHA256SUMS.rootfs
 
+      
       - name: Upload rootfs artifacts
         uses: actions/upload-artifact@v4
         with:
