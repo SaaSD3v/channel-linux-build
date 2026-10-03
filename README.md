@@ -25,7 +25,7 @@ The repository is organized so the complete build remains available while each m
 | --- | --- | --- | --- |
 | `main` | Complete integrated build | `Build Moto G7 Play mainline Debian` | `channel-mainline-debian` |
 | `rootfs` | Debian rootfs + matching modules | `Build Debian rootfs` | `channel-debian-rootfs` |
-| `kernel-mainline-7.1` | Kernel + DTB + modules | `Build kernel mainline 7.1` | `channel-kernel-mainline-7.1` |
+| `kernel-mainline-7.1` | Kernel + DTB + modules + universal boot image | `Build kernel mainline 7.1` | `channel-kernel-mainline-7.1` |
 | `dtbo` | Minimal Channel DTBO | `Build channel DTBO` | `channel-dtbo` |
 | `lk2nd` | lk2nd MSM8953 image | `Build lk2nd MSM8953` | `channel-lk2nd-msm8953` |
 
@@ -89,7 +89,7 @@ If the secret is not configured, the build generates an isolated Ed25519 test ke
 
 This credential artifact is retained for 1 day.
 
-The integrated workflow, the separated `rootfs` workflow, and the `kernel-mainline-7.1` workflow share the same SSH authentication implementation. Manual runs expose the same selectable authentication modes; push builds keep the automatic key behavior.
+SSH authentication belongs only to workflows that generate a userspace rootfs. The separated `kernel-mainline-7.1` workflow has no SSH inputs or credentials because it builds no userspace.
 
 ## Separated rootfs build
 
@@ -155,7 +155,7 @@ The fragment also pins the validated WCNSS path explicitly: WCN36XX, WCNSS PIL/c
 
 It is merged on top of the ARM64 defconfig and carries the storage, USB gadget, RNDIS, networking, and bring-up options required by the current build. Initramfs support remains enabled in the kernel for compatibility, but the normal Channel boot path no longer uses one.
 
-The integrated and separated kernel builds use the same validated Channel Wi-Fi patch. The separated kernel build publishes the kernel image, Channel DTB, combined kernel+DTB image, matching modules, configuration, release string, source revision, `System.map`, the applied patch, and hashes.
+The integrated and separated kernel builds use the same validated Channel Wi-Fi patch. The separated kernel build publishes the kernel image, Channel DTB, combined kernel+DTB image, matching modules, configuration, release string, source revision, `System.map`, the applied patch, hashes, and the same rootfs-independent `boot-channel.img` used by the integrated build.
 
 ## lk2nd
 
@@ -263,7 +263,7 @@ These directory READMEs complement this main project README; they are not intend
 
 The repository was reorganized so the complete build remains on `main` while rootfs, kernel, DTBO, and lk2nd can also be built independently.
 
-The selectable SSH authentication modes are wired into the manual integrated, rootfs, and kernel workflows. The previous `disabled` choice was replaced by `open-root-usb`, which permits direct root SSH only on the USB RNDIS address; push builds retain automatic public-key behavior.
+The selectable SSH authentication modes are wired only into workflows that build a rootfs; the kernel workflow is userspace-independent and has no SSH inputs. The previous `disabled` choice was replaced by `open-root-usb`, which permits direct root SSH only on the USB RNDIS address; push builds retain automatic public-key behavior.
 
 The component workflows are also exposed from `main` as manual launchers, and the kernel launcher now mirrors the specialized branch's Wi-Fi validation and patch provenance checks.
 
