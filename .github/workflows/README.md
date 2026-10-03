@@ -8,7 +8,7 @@ Runs the complete Channel build on `main`: kernel, modules, lk2nd, DTBO, Debian 
 
 ## `rootfs.yml`
 
-Manual launcher for the separated rootfs build. It checks out the `rootfs` branch before executing the rootfs workflow.
+Manual launcher for the separated Debian rootfs build. It is shown as `Build rootfs` and checks out the `debian` branch before executing the workflow.
 
 ## `kernel-mainline-7.1.yml`
 
