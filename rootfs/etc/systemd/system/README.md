@@ -26,6 +26,9 @@ NetworkManager owns `wlan0`, association, DHCP, routes and DNS. The firmware
 service is ordered before NetworkManager so the validated WCNSS path is ready
 before normal Wi-Fi management begins.
 
+`usb0` is explicitly unmanaged by NetworkManager. The Channel USB gadget and
+`channel-dhcp.service` retain exclusive ownership of the RNDIS management link.
+
 Use `nmcli dev wifi list` and `nmcli dev wifi connect <SSID> password <PASSWORD>`
 to configure Wi-Fi at runtime.
 
