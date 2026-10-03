@@ -67,10 +67,29 @@ EOF
 sudo rm -f "$ROOTFS/etc/apt/sources.list.d/ubuntu.sources" 2>/dev/null || true
 
 sudo cp -L /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
+
+# systemd's package setup expects a normal Linux userspace view even in a
+# chroot. Seed machine-id on the host and provide proc/sys/dev while apt/dpkg
+# configures the Ubuntu packages.
+if [ ! -s "$ROOTFS/etc/machine-id" ]; then
+  openssl rand -hex 16 | sudo tee "$ROOTFS/etc/machine-id" >/dev/null
+fi
+
 sudo update-binfmts --enable qemu-aarch64 || true
 if [ -x /usr/bin/qemu-aarch64-static ]; then
   sudo install -m 0755 /usr/bin/qemu-aarch64-static "$ROOTFS/usr/bin/qemu-aarch64-static"
 fi
+
+bootstrap_cleanup_mounts() {
+  sudo umount -R "$ROOTFS/dev" 2>/dev/null || true
+  sudo umount "$ROOTFS/proc" 2>/dev/null || true
+  sudo umount "$ROOTFS/sys" 2>/dev/null || true
+}
+trap bootstrap_cleanup_mounts EXIT
+sudo mount --rbind /dev "$ROOTFS/dev"
+sudo mount --make-rslave "$ROOTFS/dev"
+sudo mount -t proc proc "$ROOTFS/proc"
+sudo mount -t sysfs sysfs "$ROOTFS/sys"
 
 # Prevent package postinst scripts from trying to start services inside the
 # build chroot. Services are enabled explicitly after the rootfs is configured.
@@ -98,6 +117,8 @@ sudo chroot "$ROOTFS" /bin/sh -ec '
   rm -rf /var/lib/apt/lists/*
 '
 sudo rm -f "$ROOTFS/usr/sbin/policy-rc.d"
+bootstrap_cleanup_mounts
+trap - EXIT
 echo "::endgroup::"
 
 echo "::group::Install channel headless configuration"
