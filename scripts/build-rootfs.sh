@@ -59,6 +59,7 @@ sudo chmod 0755 "$ROOTFS/usr/local/sbin/channel-usb-gadget"
 sudo chmod 0755 "$ROOTFS/usr/local/sbin/channel-wifi-firmware"
 sudo chmod 0755 "$ROOTFS/usr/local/sbin/channel-wifi-dhcp"
 sudo chmod 0755 "$ROOTFS/usr/local/libexec/channel-udhcpc"
+sudo install -d -m 0755 "$ROOTFS/etc/wpa_supplicant"
 
 printf '%s\n' channel | sudo tee "$ROOTFS/etc/hostname" >/dev/null
 sudo tee "$ROOTFS/etc/hosts" >/dev/null <<'EOF'
@@ -233,11 +234,10 @@ sudo systemctl --root="$ROOTFS" enable \
 
 sudo systemctl --root="$ROOTFS" enable ssh.service
 
-if [ "$WIFI_AUTOCONNECT" -eq 1 ]; then
-  sudo systemctl --root="$ROOTFS" enable channel-wifi-supplicant.service channel-wifi-dhcp-client.service
-else
-  sudo systemctl --root="$ROOTFS" disable channel-wifi-supplicant.service channel-wifi-dhcp-client.service 2>/dev/null || true
-fi
+# Always enable the runtime Wi-Fi configuration watcher. If CI credentials
+# are embedded, it starts Wi-Fi automatically at boot. Otherwise the image
+# stays ready until the user creates the standard wpa_supplicant config.
+sudo systemctl --root="$ROOTFS" enable channel-wifi-config.path
 
 # Keep a persistent time floor. systemd-timesyncd advances this after a
 # successful sync, preventing the broken device RTC from dropping back to 1970.
@@ -294,7 +294,6 @@ if [ -x /usr/bin/qemu-aarch64-static ]; then
 fi
 
 if [ "$WIFI_AUTOCONNECT" -eq 1 ]; then
-  sudo install -d -m 0755 "$ROOTFS/etc/wpa_supplicant"
   # Never print or persist the plaintext PSK comment emitted by wpa_passphrase.
   set +x
   {
@@ -365,7 +364,9 @@ echo "::endgroup::"
   echo "ssh_auth=$SSH_AUTH_MODE"
   echo "ssh_listen=172.16.42.1"
   echo "ssh_scope=usb-only"
-  echo "wifi_autoconnect=$([ "$WIFI_AUTOCONNECT" -eq 1 ] && echo enabled || echo disabled)"
+  echo "wifi_autoconnect=$([ "$WIFI_AUTOCONNECT" -eq 1 ] && echo embedded || echo runtime-ready)"
+  echo "wifi_runtime_config=/etc/wpa_supplicant/wpa_supplicant-channel.conf"
+  echo "wifi_runtime_setup=wpa_passphrase"
   echo "wifi_firmware=stock-modem-vendor-readonly"
   echo "time_sync=systemd-timesyncd"
 } > "$OUT_DIR/build-info.txt"
