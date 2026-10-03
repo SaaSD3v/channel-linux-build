@@ -95,7 +95,7 @@ jobs:
           grep -qx 'CONFIG_QCOM_WCNSS_CTRL=m' "out/kernel.config-$KREL"
           grep -qx 'CONFIG_RPMSG_QCOM_SMD=y' "out/kernel.config-$KREL"
 
-      - name: Build Debian rootfs and initramfs
+      - name: Build Debian rootfs
         env:
           KERNEL_DIR: ${{ github.workspace }}/kernel
           OUT_DIR: ${{ github.workspace }}/out
@@ -115,10 +115,9 @@ jobs:
           scripts/build-rootfs.sh
 
           test -s out/debian-channel-rootfs.ext4.zst
-          test -s "out/initrd.img-$KERNEL_RELEASE"
           grep -q '^wifi_firmware=stock-modem-vendor-readonly$' out/build-info.txt
           grep -q '^time_sync=systemd-timesyncd$' out/build-info.txt
-          sha256sum out/debian-channel-rootfs.ext4.zst "out/initrd.img-$KERNEL_RELEASE" \
+          sha256sum out/debian-channel-rootfs.ext4.zst \
             out/build-info.txt | tee out/SHA256SUMS.rootfs
 
       - name: Upload rootfs artifacts
@@ -127,7 +126,6 @@ jobs:
           name: channel-debian-rootfs
           path: |
             out/debian-channel-rootfs.ext4.zst
-            out/initrd.img-*
             out/build-info.txt
             out/SHA256SUMS.rootfs
           if-no-files-found: error
