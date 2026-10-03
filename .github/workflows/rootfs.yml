@@ -47,7 +47,6 @@ jobs:
           bash -n scripts/build-rootfs.sh
           sh -n rootfs/usr/local/sbin/channel-usb-gadget
           sh -n rootfs/usr/local/sbin/channel-wifi-firmware
-          sh -n rootfs/usr/local/libexec/channel-udhcpc
 
       - name: Install rootfs and kernel dependencies
         run: |
