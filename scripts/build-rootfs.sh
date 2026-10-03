@@ -12,6 +12,7 @@ ALPINE_VERSION="${ALPINE_VERSION:-3.24.2}"
 ALPINE_BRANCH="${ALPINE_BRANCH:-v${ALPINE_VERSION%.*}}"
 ALPINE_MIRROR="${ALPINE_MIRROR:-https://dl-cdn.alpinelinux.org/alpine}"
 ALPINE_ARCH="${ALPINE_ARCH:-aarch64}"
+APK_TOOLS_STATIC_VERSION="${APK_TOOLS_STATIC_VERSION:-3.0.8-r0}"
 
 if [ -z "$KERNEL_MODULES_ARCHIVE" ] && [ -z "$KERNEL_DIR" ]; then
   echo "set KERNEL_MODULES_ARCHIVE or KERNEL_DIR" >&2
@@ -50,10 +51,30 @@ if [ -x /usr/bin/qemu-aarch64-static ]; then
   sudo install -m 0755 /usr/bin/qemu-aarch64-static "$ROOTFS/usr/bin/qemu-aarch64-static"
 fi
 
-sudo chroot "$ROOTFS" /bin/sh -ec '
-  apk update
-  apk add --no-cache \
-    openrc busybox-openrc busybox-mdev-openrc \
+APK_STATIC_PKG="$WORK_DIR/apk-tools-static-$APK_TOOLS_STATIC_VERSION.apk"
+APK_STATIC_DIR="$WORK_DIR/apk-static"
+APK_STATIC_URL="$ALPINE_MIRROR/$ALPINE_BRANCH/main/x86_64/apk-tools-static-$APK_TOOLS_STATIC_VERSION.apk"
+
+rm -rf "$APK_STATIC_DIR"
+mkdir -p "$APK_STATIC_DIR"
+curl -fsSL --retry 3 "$APK_STATIC_URL" -o "$APK_STATIC_PKG"
+tar -xzf "$APK_STATIC_PKG" -C "$APK_STATIC_DIR" sbin/apk.static
+APK_STATIC="$APK_STATIC_DIR/sbin/apk.static"
+test -x "$APK_STATIC"
+
+# Use the native static apk binary to perform package file operations. Target
+# package scripts still run inside the aarch64 root through binfmt/QEMU, but
+# ownership/mode/SUID handling is no longer emulated. This avoids QEMU failing
+# while apk preserves dbus-daemon-launch-helper permissions.
+sudo "$APK_STATIC" \
+  --root "$ROOTFS" \
+  --arch "$ALPINE_ARCH" \
+  --keys-dir etc/apk/keys \
+  -X "$ALPINE_MIRROR/$ALPINE_BRANCH/main" \
+  -X "$ALPINE_MIRROR/$ALPINE_BRANCH/community" \
+  --update-cache add \
+    openrc busybox-openrc \
+    eudev eudev-openrc udev-init-scripts udev-init-scripts-openrc \
     openssh-server openssh-client \
     iproute2 \
     dnsmasq dnsmasq-openrc \
@@ -68,8 +89,8 @@ sudo chroot "$ROOTFS" /bin/sh -ec '
     wpa_supplicant wireless-regdb \
     chrony \
     openssl
-  update-ca-certificates
-'
+
+sudo chroot "$ROOTFS" /usr/sbin/update-ca-certificates
 echo "::endgroup::"
 
 echo "::group::Install Channel Alpine headless configuration"
@@ -245,13 +266,13 @@ sudo chroot "$ROOTFS" /usr/bin/ssh-keygen -A
 
 # Build an explicit OpenRC runlevel set. The minirootfs is not a setup-alpine
 # installation, so services must be registered manually.
-for service in devfs dmesg mdev; do
+for service in devfs dmesg udev udev-trigger udev-settle; do
   sudo chroot "$ROOTFS" /sbin/rc-update add "$service" sysinit
 done
 for service in hwdrivers modules sysctl hostname bootmisc syslog localmount; do
   sudo chroot "$ROOTFS" /sbin/rc-update add "$service" boot
 done
-for service in dbus chronyd channel-usb-gadget dnsmasq channel-sshd channel-wifi-firmware networkmanager; do
+for service in udev-postmount dbus chronyd channel-usb-gadget dnsmasq channel-sshd channel-wifi-firmware networkmanager; do
   sudo chroot "$ROOTFS" /sbin/rc-update add "$service" default
 done
 
@@ -325,6 +346,7 @@ echo "::endgroup::"
   echo "ssh_scope=usb-only"
   echo "wifi_manager=NetworkManager"
   echo "wifi_runtime_setup=nmcli"
+  echo "usb_network_manager=unmanaged"
   echo "wifi_firmware=stock-modem-vendor-readonly"
   echo "time_sync=chrony"
 } > "$OUT_DIR/build-info.txt"
