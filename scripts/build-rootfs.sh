@@ -13,6 +13,11 @@ WIFI_PASSWORD="${WIFI_PASSWORD:-}"
 WIFI_COUNTRY="${WIFI_COUNTRY:-}"
 WIFI_AUTOCONNECT=0
 
+ALPINE_VERSION="${ALPINE_VERSION:-3.24.2}"
+ALPINE_BRANCH="${ALPINE_BRANCH:-v${ALPINE_VERSION%.*}}"
+ALPINE_MIRROR="${ALPINE_MIRROR:-https://dl-cdn.alpinelinux.org/alpine}"
+ALPINE_ARCH="${ALPINE_ARCH:-aarch64}"
+
 if [ -n "$WIFI_SSID" ] || [ -n "$WIFI_PASSWORD" ]; then
   if [ -z "$WIFI_SSID" ] || [ -z "$WIFI_PASSWORD" ]; then
     echo "WIFI_SSID and WIFI_PASSWORD must both be set for Wi-Fi autoconnect" >&2
@@ -38,28 +43,72 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK_DIR="${WORK_DIR:-$REPO_ROOT/.work}"
 ROOTFS="$WORK_DIR/rootfs"
 KREL="$KERNEL_RELEASE"
+MINIROOTFS="alpine-minirootfs-${ALPINE_VERSION}-${ALPINE_ARCH}.tar.gz"
+MINIROOTFS_URL="${ALPINE_MIRROR}/${ALPINE_BRANCH}/releases/${ALPINE_ARCH}/${MINIROOTFS}"
+MINIROOTFS_PATH="$WORK_DIR/$MINIROOTFS"
+MINIROOTFS_SHA_PATH="$MINIROOTFS_PATH.sha256"
 
 mkdir -p "$WORK_DIR" "$OUT_DIR"
 sudo rm -rf "$ROOTFS"
+sudo mkdir -p "$ROOTFS"
 
-echo "::group::Create Debian 13 (trixie) arm64 rootfs"
-sudo mmdebstrap \
-  --architectures=arm64 \
-  --variant=minbase \
-  --components=main \
-  --keyring=/usr/share/keyrings/debian-archive-keyring.gpg \
-  --aptopt='Apt::Install-Recommends "false"' \
-  --include=debian-archive-keyring,systemd-sysv,openssh-server,iproute2,iputils-ping,dnsmasq,ca-certificates,kmod,udev,initramfs-tools,busybox-static,e2fsprogs,util-linux,procps,less,nano,ethtool,openssh-client,iw,wpasupplicant,wireless-regdb,dbus,systemd-timesyncd \
-  trixie "$ROOTFS" https://deb.debian.org/debian
+echo "::group::Create Alpine ${ALPINE_VERSION} ${ALPINE_ARCH} rootfs"
+curl -fsSL --retry 3 "$MINIROOTFS_URL" -o "$MINIROOTFS_PATH"
+curl -fsSL --retry 3 "$MINIROOTFS_URL.sha256" -o "$MINIROOTFS_SHA_PATH"
+(
+  cd "$WORK_DIR"
+  sha256sum -c "$(basename "$MINIROOTFS_SHA_PATH")"
+)
+sudo tar --numeric-owner -xzf "$MINIROOTFS_PATH" -C "$ROOTFS"
+
+sudo tee "$ROOTFS/etc/apk/repositories" >/dev/null <<EOF
+${ALPINE_MIRROR}/${ALPINE_BRANCH}/main
+${ALPINE_MIRROR}/${ALPINE_BRANCH}/community
+EOF
+
+sudo cp -L /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
+if [ -x /usr/bin/qemu-aarch64-static ]; then
+  sudo install -m 0755 /usr/bin/qemu-aarch64-static "$ROOTFS/usr/bin/qemu-aarch64-static"
+fi
+
+sudo chroot "$ROOTFS" /bin/sh -ec '
+  apk update
+  apk add --no-cache \
+    alpine-base \
+    openrc \
+    openssh-server openssh-client \
+    iproute2 iputils \
+    dnsmasq \
+    ca-certificates \
+    kmod \
+    e2fsprogs \
+    util-linux \
+    procps \
+    less nano \
+    ethtool iw \
+    wpa_supplicant wireless-regdb \
+    dbus \
+    chrony \
+    mkinitfs \
+    openssl
+  update-ca-certificates
+'
 echo "::endgroup::"
 
-echo "::group::Install channel headless configuration"
+echo "::group::Install Channel Alpine headless configuration"
 sudo cp -a "$REPO_ROOT/rootfs/." "$ROOTFS/"
-sudo chmod 0755 "$ROOTFS/usr/local/sbin/channel-usb-gadget"
-sudo chmod 0755 "$ROOTFS/usr/local/sbin/channel-wifi-firmware"
-sudo chmod 0755 "$ROOTFS/usr/local/sbin/channel-wifi-dhcp"
-sudo chmod 0755 "$ROOTFS/usr/local/libexec/channel-udhcpc"
-sudo install -d -m 0755 "$ROOTFS/etc/wpa_supplicant"
+sudo chmod 0755 \
+  "$ROOTFS/usr/local/sbin/channel-usb-gadget" \
+  "$ROOTFS/usr/local/sbin/channel-wifi-firmware" \
+  "$ROOTFS/usr/local/sbin/channel-wifi-dhcp" \
+  "$ROOTFS/usr/local/sbin/channel-wifi" \
+  "$ROOTFS/usr/local/libexec/channel-udhcpc" \
+  "$ROOTFS/etc/init.d/channel-usb-gadget" \
+  "$ROOTFS/etc/init.d/channel-dhcp" \
+  "$ROOTFS/etc/init.d/channel-sshd" \
+  "$ROOTFS/etc/init.d/channel-wifi"
+
+sudo install -d -m 0755 "$ROOTFS/etc/wpa_supplicant" "$ROOTFS/etc/ssh/sshd_config.d"
 
 printf '%s\n' channel | sudo tee "$ROOTFS/etc/hostname" >/dev/null
 sudo tee "$ROOTFS/etc/hosts" >/dev/null <<'EOF'
@@ -67,6 +116,15 @@ sudo tee "$ROOTFS/etc/hosts" >/dev/null <<'EOF'
 127.0.1.1 channel
 ::1 localhost ip6-localhost ip6-loopback
 EOF
+
+sudo tee "$ROOTFS/etc/fstab" >/dev/null <<'EOF'
+LABEL=alpine-rootfs / ext4 rw,noatime 0 1
+EOF
+
+# Keep a stable per-image identifier for the USB serial fallback.
+if [ ! -s "$ROOTFS/etc/machine-id" ]; then
+  openssl rand -hex 16 | sudo tee "$ROOTFS/etc/machine-id" >/dev/null
+fi
 
 SSH_AUTH_MODE="${SSH_AUTH_MODE:-auto}"
 SSH_PUBLIC_KEY_INPUT="${SSH_PUBLIC_KEY_INPUT:-}"
@@ -92,7 +150,7 @@ install_public_key() {
 }
 
 generate_public_key() {
-  ssh-keygen -q -t ed25519 -N "" -C "channel-bringup-ci" -f "$OUT_DIR/channel_test_ed25519"
+  ssh-keygen -q -t ed25519 -N "" -C "channel-alpine-bringup-ci" -f "$OUT_DIR/channel_test_ed25519"
   install_public_key "$(cat "$OUT_DIR/channel_test_ed25519.pub")"
 }
 
@@ -153,17 +211,18 @@ case "$SSH_AUTH_MODE" in
   open-root-usb)
     ALLOW_EMPTY_SSH=1
     ;;
-  disabled)
-    echo "SSH mode 'disabled' was removed; use open-root-usb for direct USB root login" >&2
-    exit 2
-    ;;
   *)
     echo "Unsupported SSH_AUTH_MODE: $SSH_AUTH_MODE" >&2
     exit 2
     ;;
 esac
 
-if [ "$ALLOW_PASSWORD" -eq 1 ]; then
+if [ "$ALLOW_EMPTY_SSH" -eq 1 ]; then
+  # Alpine OpenSSH is built without PAM by default. An empty root password is
+  # therefore required for the SSH "none"/empty-password path. No getty is
+  # enabled in this image, and sshd only listens on the USB RNDIS address.
+  sudo sed -i 's|^root:[^:]*:|root::|' "$ROOTFS/etc/shadow"
+elif [ "$ALLOW_PASSWORD" -eq 1 ]; then
   ROOT_HASH="$(openssl passwd -6 "$ROOT_PASSWORD")"
   sudo sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "$ROOTFS/etc/shadow"
   unset ROOT_HASH ROOT_PASSWORD
@@ -172,18 +231,6 @@ else
   ROOT_HASH="$(openssl passwd -6 "$RANDOM_PASSWORD")"
   sudo sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "$ROOTFS/etc/shadow"
   unset RANDOM_PASSWORD ROOT_HASH
-fi
-
-if [ "$ALLOW_EMPTY_SSH" -eq 1 ]; then
-  # Keep the Unix root password non-empty so local/serial login is not opened.
-  # The USB-only sshd accepts its initial empty "none" authentication through
-  # a dedicated PAM policy instead.
-  sudo tee "$ROOTFS/etc/pam.d/sshd" >/dev/null <<'EOF'
-# Channel USB-only open-root SSH mode.
-auth required pam_permit.so
-account required pam_permit.so
-session required pam_permit.so
-EOF
 fi
 
 if [ "$ALLOW_EMPTY_SSH" -eq 1 ]; then
@@ -214,39 +261,32 @@ PubkeyAuthentication $SSH_PUBKEY
 PasswordAuthentication $SSH_PASSWORD_AUTH
 KbdInteractiveAuthentication no
 PermitEmptyPasswords $SSH_EMPTY_PASSWORDS
-UsePAM yes
 UseDNS no
 EOF
 
-sudo ssh-keygen -A -f "$ROOTFS"
+if ! sudo grep -Eq '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' "$ROOTFS/etc/ssh/sshd_config"; then
+  sudo sed -i '1iInclude /etc/ssh/sshd_config.d/*.conf' "$ROOTFS/etc/ssh/sshd_config"
+fi
 
-# Keep SSH under ssh.service control. Debian also ships ssh.socket, which
-# listens independently from sshd's ListenAddress when explicitly enabled.
-sudo systemctl --root="$ROOTFS" disable ssh.socket 2>/dev/null || true
-sudo systemctl --root="$ROOTFS" disable dnsmasq.service 2>/dev/null || true
-# Debian's generic wpa_supplicant.service is D-Bus controlled and does not
-# configure wlan0 by itself. Channel uses the explicit interface service below.
-sudo systemctl --root="$ROOTFS" disable wpa_supplicant.service 2>/dev/null || true
+sudo chroot "$ROOTFS" /usr/bin/ssh-keygen -A
 
-sudo systemctl --root="$ROOTFS" enable \
-  channel-usb-gadget.service channel-dhcp.service \
-  channel-wifi-firmware.service dbus.socket systemd-timesyncd.service
+# Build an explicit OpenRC runlevel set. The minirootfs is not a setup-alpine
+# installation, so services must be registered manually.
+for service in devfs dmesg mdev; do
+  sudo chroot "$ROOTFS" /sbin/rc-update add "$service" sysinit
+done
+for service in hwdrivers modules sysctl hostname bootmisc syslog localmount; do
+  sudo chroot "$ROOTFS" /sbin/rc-update add "$service" boot
+done
+for service in dbus chronyd channel-usb-gadget channel-dhcp channel-sshd channel-wifi; do
+  sudo chroot "$ROOTFS" /sbin/rc-update add "$service" default
+done
 
-sudo systemctl --root="$ROOTFS" enable ssh.service
+# Do not expose a local root login in open-root-usb mode.
+sudo rm -f "$ROOTFS"/etc/runlevels/default/agetty.* "$ROOTFS"/etc/runlevels/default/consolefont 2>/dev/null || true
 
-# Always enable the runtime Wi-Fi configuration watcher. If CI credentials
-# are embedded, it starts Wi-Fi automatically at boot. Otherwise the image
-# stays ready until the user creates the standard wpa_supplicant config.
-sudo systemctl --root="$ROOTFS" enable channel-wifi-config.path
-
-# Keep a persistent time floor. systemd-timesyncd advances this after a
-# successful sync, preventing the broken device RTC from dropping back to 1970.
-sudo install -d -m 0755 "$ROOTFS/var/lib/systemd/timesync"
-sudo touch "$ROOTFS/var/lib/systemd/timesync/clock"
-
-# This device is intentionally headless. Persist the journal so boot/USB
-# failures can be inspected by mounting the microSD on another machine.
-sudo mkdir -p "$ROOTFS/var/log/journal"
+# Keep persistent logs for headless bring-up.
+sudo install -d -m 0755 "$ROOTFS/var/log"
 echo "::endgroup::"
 
 echo "::group::Install mainline kernel modules"
@@ -257,6 +297,7 @@ else
   sudo env PATH="$PATH" make -C "$KERNEL_DIR" ARCH=arm64 KERNELRELEASE="$KREL" INSTALL_MOD_PATH="$ROOTFS" modules_install
 fi
 sudo depmod -b "$ROOTFS" "$KREL"
+
 sudo mkdir -p "$ROOTFS/boot"
 if [ -n "$KERNEL_CONFIG_FILE" ] && [ -s "$KERNEL_CONFIG_FILE" ]; then
   sudo cp "$KERNEL_CONFIG_FILE" "$ROOTFS/boot/config-$KREL"
@@ -270,31 +311,13 @@ elif [ -n "$KERNEL_DIR" ] && [ -f "$KERNEL_DIR/System.map" ]; then
 fi
 echo "::endgroup::"
 
-echo "::group::Generate small Debian initramfs"
-sudo tee "$ROOTFS/etc/initramfs-tools/initramfs.conf" >/dev/null <<'EOF'
-MODULES=list
-BUSYBOX=y
-KEYMAP=n
-COMPRESS=gzip
-DEVICE=
-NFSROOT=auto
-RUNSIZE=10%
+echo "::group::Generate Alpine initramfs"
+sudo install -d -m 0755 "$ROOTFS/etc/mkinitfs"
+sudo tee "$ROOTFS/etc/mkinitfs/mkinitfs.conf" >/dev/null <<'EOF'
+features="base ext4"
 EOF
-
-# Storage and ext4 are intentionally required built-in by the kernel config.
-# MODULES=list avoids probing the x86 GitHub runner from inside the arm64 chroot.
-# Do not force built-in drivers into initramfs-tools' module list.
-sudo tee "$ROOTFS/etc/initramfs-tools/modules" >/dev/null <<'EOF'
-# channel: no forced modules; critical root-storage drivers are built into the kernel
-EOF
-
-sudo update-binfmts --enable qemu-aarch64 || true
-if [ -x /usr/bin/qemu-aarch64-static ]; then
-  sudo install -m 0755 /usr/bin/qemu-aarch64-static "$ROOTFS/usr/bin/qemu-aarch64-static"
-fi
 
 if [ "$WIFI_AUTOCONNECT" -eq 1 ]; then
-  # Never print or persist the plaintext PSK comment emitted by wpa_passphrase.
   set +x
   {
     echo 'ctrl_interface=/run/wpa_supplicant'
@@ -309,31 +332,16 @@ if [ "$WIFI_AUTOCONNECT" -eq 1 ]; then
   unset WIFI_PASSWORD
 fi
 
-cleanup_mounts() {
-  sudo umount -R "$ROOTFS/dev" 2>/dev/null || true
-  sudo umount "$ROOTFS/proc" 2>/dev/null || true
-  sudo umount "$ROOTFS/sys" 2>/dev/null || true
-}
-trap cleanup_mounts EXIT
-
-sudo mount --bind /dev "$ROOTFS/dev"
-sudo mount -t proc proc "$ROOTFS/proc"
-sudo mount -t sysfs sysfs "$ROOTFS/sys"
-
-# Validate the target daemon with the target arm64 userspace before sealing
-# the image. sshd expects its runtime privilege-separation directory, which
-# systemd creates at boot but is absent in an offline chroot.
-sudo install -d -m 0755 "$ROOTFS/run/sshd"
 sudo chroot "$ROOTFS" /usr/sbin/sshd -t
-sudo chroot "$ROOTFS" /bin/sh -c "depmod '$KREL'; update-initramfs -c -k '$KREL'"
+sudo chroot "$ROOTFS" /sbin/mkinitfs -c /etc/mkinitfs/mkinitfs.conf -b / "$KREL"
 
-cleanup_mounts
-trap - EXIT
+INITRAMFS="$ROOTFS/boot/initramfs-$KREL"
+test -s "$INITRAMFS"
 
 # qemu-aarch64-static is a host-side helper and must not ship in the target image.
 sudo rm -f "$ROOTFS/usr/bin/qemu-aarch64-static"
+sudo cp "$INITRAMFS" "$OUT_DIR/initrd.img-$KREL"
 
-sudo cp "$ROOTFS/boot/initrd.img-$KREL" "$OUT_DIR/initrd.img-$KREL"
 INITRD_SIZE="$(stat -c %s "$OUT_DIR/initrd.img-$KREL")"
 if [ "$INITRD_SIZE" -gt $((48 * 1024 * 1024)) ]; then
   echo "initramfs is unexpectedly large: $INITRD_SIZE bytes" >&2
@@ -344,21 +352,24 @@ echo "::endgroup::"
 
 echo "::group::Create ext4 rootfs image"
 USED_MB="$(sudo du -sm "$ROOTFS" | awk '{print $1}')"
-IMAGE_MB=$((USED_MB + 700))
-if [ "$IMAGE_MB" -lt 1536 ]; then IMAGE_MB=1536; fi
+IMAGE_MB=$((USED_MB + 512))
+if [ "$IMAGE_MB" -lt 1024 ]; then IMAGE_MB=1024; fi
 
-ROOTFS_IMG="$OUT_DIR/debian-channel-rootfs.ext4"
+ROOTFS_IMG="$OUT_DIR/alpine-channel-rootfs.ext4"
 truncate -s "${IMAGE_MB}M" "$ROOTFS_IMG"
-sudo mkfs.ext4 -F -m 0 -L debian-rootfs -d "$ROOTFS" "$ROOTFS_IMG"
+sudo mkfs.ext4 -F -m 0 -L alpine-rootfs -d "$ROOTFS" "$ROOTFS_IMG"
 sudo e2fsck -fn "$ROOTFS_IMG"
 zstd -T0 -10 -f "$ROOTFS_IMG" -o "$ROOTFS_IMG.zst"
 rm -f "$ROOTFS_IMG"
 echo "::endgroup::"
 
 {
-  echo "debian_suite=trixie"
+  echo "distribution=alpine"
+  echo "alpine_version=$ALPINE_VERSION"
+  echo "alpine_branch=$ALPINE_BRANCH"
   echo "kernel_release=$KREL"
-  echo "rootfs_label=debian-rootfs"
+  echo "rootfs_label=alpine-rootfs"
+  echo "init=openrc"
   echo "usb_device_ip=172.16.42.1"
   echo "usb_dhcp_range=172.16.42.2-172.16.42.20"
   echo "ssh_auth=$SSH_AUTH_MODE"
@@ -368,5 +379,5 @@ echo "::endgroup::"
   echo "wifi_runtime_config=/etc/wpa_supplicant/wpa_supplicant-channel.conf"
   echo "wifi_runtime_setup=wpa_passphrase"
   echo "wifi_firmware=stock-modem-vendor-readonly"
-  echo "time_sync=systemd-timesyncd"
+  echo "time_sync=chrony"
 } > "$OUT_DIR/build-info.txt"
