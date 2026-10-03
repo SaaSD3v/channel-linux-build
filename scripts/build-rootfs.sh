@@ -86,7 +86,6 @@ sudo chroot "$ROOTFS" /bin/sh -ec '
     ethtool iw \
     wpa_supplicant wireless-regdb \
     chrony \
-    mkinitfs \
     openssl
   update-ca-certificates
 '
@@ -317,24 +316,7 @@ elif [ -n "$KERNEL_DIR" ] && [ -f "$KERNEL_DIR/System.map" ]; then
 fi
 echo "::endgroup::"
 
-echo "::group::Generate Alpine initramfs"
-sudo install -d -m 0755 "$ROOTFS/etc/mkinitfs"
-sudo tee "$ROOTFS/etc/mkinitfs/mkinitfs.conf" >/dev/null <<'EOF'
-features="base ext4"
-EOF
-
-# Channel's root-storage path is built into the kernel. Keep the early userspace
-# independent of the distro's kernel-module packaging: mkinitfs only needs the
-# base userspace to locate LABEL=alpine-rootfs and switch_root into it.
-if [ -n "$KERNEL_CONFIG_FILE" ] && [ -s "$KERNEL_CONFIG_FILE" ]; then
-  for option in CONFIG_EXT4_FS CONFIG_MMC CONFIG_MMC_BLOCK CONFIG_MMC_SDHCI CONFIG_MMC_SDHCI_PLTFM CONFIG_MMC_SDHCI_MSM; do
-    grep -q "^$option=y$" "$KERNEL_CONFIG_FILE" || {
-      echo "$option must be built-in when generating the module-free Channel initramfs" >&2
-      exit 1
-    }
-  done
-fi
-
+echo "::group::Finalize Alpine rootfs"
 if [ "$WIFI_AUTOCONNECT" -eq 1 ]; then
   set +x
   {
@@ -351,21 +333,9 @@ if [ "$WIFI_AUTOCONNECT" -eq 1 ]; then
 fi
 
 sudo chroot "$ROOTFS" /usr/sbin/sshd -t
-sudo chroot "$ROOTFS" /sbin/mkinitfs -n -c /etc/mkinitfs/mkinitfs.conf -b / -o "/boot/initramfs-$KREL" "$KREL"
-
-INITRAMFS="$ROOTFS/boot/initramfs-$KREL"
-test -s "$INITRAMFS"
 
 # qemu-aarch64-static is a host-side helper and must not ship in the target image.
 sudo rm -f "$ROOTFS/usr/bin/qemu-aarch64-static"
-sudo install -m 0644 "$INITRAMFS" "$OUT_DIR/initrd.img-$KREL"
-
-INITRD_SIZE="$(stat -c %s "$OUT_DIR/initrd.img-$KREL")"
-if [ "$INITRD_SIZE" -gt $((48 * 1024 * 1024)) ]; then
-  echo "initramfs is unexpectedly large: $INITRD_SIZE bytes" >&2
-  exit 1
-fi
-echo "initramfs: $INITRD_SIZE bytes"
 echo "::endgroup::"
 
 echo "::group::Create ext4 rootfs image"
