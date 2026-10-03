@@ -51,5 +51,9 @@ case "${1:-}" in
                 printf 'nameserver %s\n' "$server" >> /etc/resolv.conf
             done
         fi
+
+        # The device RTC starts near the Unix epoch. Once DHCP has provided
+        # working IP/routing/DNS, immediately retry network time sync.
+        systemctl restart systemd-timesyncd.service >/dev/null 2>&1 || true
         ;;
 esac

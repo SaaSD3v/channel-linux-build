@@ -28,3 +28,5 @@ IPv4 configuration with the validated BusyBox udhcpc hook.
 
 `systemd-timesyncd` is enabled so the broken hardware RTC is corrected after
 network connectivity becomes available.
+
+- `channel-wifi-config.path` — watches for `/etc/wpa_supplicant/wpa_supplicant-channel.conf` and triggers the DHCP service; systemd dependencies then start the supplicant and WCNSS firmware in order.
