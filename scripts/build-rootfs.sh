@@ -264,8 +264,9 @@ fi
 
 sudo chroot "$ROOTFS" /usr/bin/ssh-keygen -A
 
-# Build an explicit OpenRC runlevel set. The minirootfs is not a setup-alpine
-# installation, so services must be registered manually.
+# Build an explicit OpenRC runlevel set. NetworkManager on Alpine requires
+# eudev; never run mdev and udev as competing device managers.
+sudo chroot "$ROOTFS" /sbin/rc-update del mdev sysinit 2>/dev/null || true
 for service in devfs dmesg udev udev-trigger udev-settle; do
   sudo chroot "$ROOTFS" /sbin/rc-update add "$service" sysinit
 done
@@ -275,6 +276,172 @@ done
 for service in udev-postmount dbus chronyd channel-usb-gadget dnsmasq channel-sshd channel-wifi-firmware networkmanager; do
   sudo chroot "$ROOTFS" /sbin/rc-update add "$service" default
 done
+
+# The packaged wpa_supplicant service must stay disabled when NetworkManager
+# uses wpa_supplicant as its backend; NetworkManager starts/controls it itself.
+sudo chroot "$ROOTFS" /sbin/rc-update del wpa_supplicant boot 2>/dev/null || true
+sudo chroot "$ROOTFS" /sbin/rc-update del networking boot 2>/dev/null || true
+
+test -x "$ROOTFS/sbin/udevd"
+test -L "$ROOTFS/etc/runlevels/sysinit/udev"
+test -L "$ROOTFS/etc/runlevels/sysinit/udev-trigger"
+test -L "$ROOTFS/etc/runlevels/sysinit/udev-settle"
+test -L "$ROOTFS/etc/runlevels/default/udev-postmount"
+test -L "$ROOTFS/etc/runlevels/default/networkmanager"
+test ! -e "$ROOTFS/etc/runlevels/sysinit/mdev"
+test ! -e "$ROOTFS/etc/runlevels/boot/networking"
+test ! -e "$ROOTFS/etc/runlevels/boot/wpa_supplicant"
+grep -q '^unmanaged-devices=interface-name:usb0# This image is intentionally headless. Alpine's init spawns gettys from
+# /etc/inittab, independently of OpenRC runlevel links. Remove both forms so
+# open-root-usb cannot expose the empty root password on a local/serial console.
+sudo sed -i -E '/::(respawn|askfirst):.*(a?getty)/d' "$ROOTFS/etc/inittab"
+sudo rm -f "$ROOTFS"/etc/runlevels/default/agetty.* "$ROOTFS"/etc/runlevels/default/consolefont 2>/dev/null || true
+if grep -Eq '::(respawn|askfirst):.*(a?getty)' "$ROOTFS/etc/inittab"; then
+  echo "Refusing an Alpine image with a local getty enabled" >&2
+  exit 1
+fi
+
+# Keep persistent logs for headless bring-up.
+sudo install -d -m 0755 "$ROOTFS/var/log"
+echo "::endgroup::"
+
+echo "::group::Install mainline kernel modules"
+if [ -n "$KERNEL_MODULES_ARCHIVE" ]; then
+  test -s "$KERNEL_MODULES_ARCHIVE"
+  sudo tar -I zstd -xf "$KERNEL_MODULES_ARCHIVE" -C "$ROOTFS"
+else
+  sudo env PATH="$PATH" make -C "$KERNEL_DIR" ARCH=arm64 KERNELRELEASE="$KREL" INSTALL_MOD_PATH="$ROOTFS" modules_install
+fi
+sudo depmod -b "$ROOTFS" "$KREL"
+
+sudo mkdir -p "$ROOTFS/boot"
+if [ -n "$KERNEL_CONFIG_FILE" ] && [ -s "$KERNEL_CONFIG_FILE" ]; then
+  sudo cp "$KERNEL_CONFIG_FILE" "$ROOTFS/boot/config-$KREL"
+elif [ -n "$KERNEL_DIR" ] && [ -s "$KERNEL_DIR/.config" ]; then
+  sudo cp "$KERNEL_DIR/.config" "$ROOTFS/boot/config-$KREL"
+fi
+if [ -n "$KERNEL_SYSTEM_MAP_FILE" ] && [ -s "$KERNEL_SYSTEM_MAP_FILE" ]; then
+  sudo cp "$KERNEL_SYSTEM_MAP_FILE" "$ROOTFS/boot/System.map-$KREL"
+elif [ -n "$KERNEL_DIR" ] && [ -f "$KERNEL_DIR/System.map" ]; then
+  sudo cp "$KERNEL_DIR/System.map" "$ROOTFS/boot/System.map-$KREL"
+fi
+echo "::endgroup::"
+
+echo "::group::Finalize Alpine rootfs"
+sudo chroot "$ROOTFS" /usr/sbin/sshd -t
+
+# qemu-aarch64-static is a host-side helper and must not ship in the target image.
+sudo rm -f "$ROOTFS/usr/bin/qemu-aarch64-static"
+echo "::endgroup::"
+
+echo "::group::Create ext4 rootfs image"
+USED_MB="$(sudo du -sm "$ROOTFS" | awk '{print $1}')"
+IMAGE_MB=$((USED_MB + 512))
+if [ "$IMAGE_MB" -lt 1024 ]; then IMAGE_MB=1024; fi
+
+ROOTFS_IMG="$OUT_DIR/alpine-channel-rootfs.ext4"
+truncate -s "${IMAGE_MB}M" "$ROOTFS_IMG"
+sudo mkfs.ext4 -F -m 0 -L alpine-rootfs -d "$ROOTFS" "$ROOTFS_IMG"
+sudo e2fsck -fn "$ROOTFS_IMG"
+zstd -T0 -10 -f "$ROOTFS_IMG" -o "$ROOTFS_IMG.zst"
+rm -f "$ROOTFS_IMG"
+echo "::endgroup::"
+
+{
+  echo "distribution=alpine"
+  echo "alpine_version=$ALPINE_VERSION"
+  echo "alpine_branch=$ALPINE_BRANCH"
+  echo "apk_tools_static_version=$APK_TOOLS_STATIC_VERSION"
+  echo "kernel_release=$KREL"
+  echo "rootfs_label=alpine-rootfs"
+  echo "init=openrc"
+  echo "usb_device_ip=172.16.42.1"
+  echo "usb_dhcp_range=172.16.42.2-172.16.42.20"
+  echo "ssh_auth=$SSH_AUTH_MODE"
+  echo "ssh_listen=172.16.42.1"
+  echo "ssh_scope=usb-only"
+  echo "wifi_manager=NetworkManager"
+  echo "wifi_runtime_setup=nmcli"
+  echo "usb_network_manager=unmanaged"
+  echo "wifi_firmware=stock-modem-vendor-readonly"
+  echo "time_sync=chrony"
+} > "$OUT_DIR/build-info.txt"
+ "$ROOTFS/etc/NetworkManager/conf.d/10-channel.conf"
+grep -q '^wifi.backend=wpa_supplicant# This image is intentionally headless. Alpine's init spawns gettys from
+# /etc/inittab, independently of OpenRC runlevel links. Remove both forms so
+# open-root-usb cannot expose the empty root password on a local/serial console.
+sudo sed -i -E '/::(respawn|askfirst):.*(a?getty)/d' "$ROOTFS/etc/inittab"
+sudo rm -f "$ROOTFS"/etc/runlevels/default/agetty.* "$ROOTFS"/etc/runlevels/default/consolefont 2>/dev/null || true
+if grep -Eq '::(respawn|askfirst):.*(a?getty)' "$ROOTFS/etc/inittab"; then
+  echo "Refusing an Alpine image with a local getty enabled" >&2
+  exit 1
+fi
+
+# Keep persistent logs for headless bring-up.
+sudo install -d -m 0755 "$ROOTFS/var/log"
+echo "::endgroup::"
+
+echo "::group::Install mainline kernel modules"
+if [ -n "$KERNEL_MODULES_ARCHIVE" ]; then
+  test -s "$KERNEL_MODULES_ARCHIVE"
+  sudo tar -I zstd -xf "$KERNEL_MODULES_ARCHIVE" -C "$ROOTFS"
+else
+  sudo env PATH="$PATH" make -C "$KERNEL_DIR" ARCH=arm64 KERNELRELEASE="$KREL" INSTALL_MOD_PATH="$ROOTFS" modules_install
+fi
+sudo depmod -b "$ROOTFS" "$KREL"
+
+sudo mkdir -p "$ROOTFS/boot"
+if [ -n "$KERNEL_CONFIG_FILE" ] && [ -s "$KERNEL_CONFIG_FILE" ]; then
+  sudo cp "$KERNEL_CONFIG_FILE" "$ROOTFS/boot/config-$KREL"
+elif [ -n "$KERNEL_DIR" ] && [ -s "$KERNEL_DIR/.config" ]; then
+  sudo cp "$KERNEL_DIR/.config" "$ROOTFS/boot/config-$KREL"
+fi
+if [ -n "$KERNEL_SYSTEM_MAP_FILE" ] && [ -s "$KERNEL_SYSTEM_MAP_FILE" ]; then
+  sudo cp "$KERNEL_SYSTEM_MAP_FILE" "$ROOTFS/boot/System.map-$KREL"
+elif [ -n "$KERNEL_DIR" ] && [ -f "$KERNEL_DIR/System.map" ]; then
+  sudo cp "$KERNEL_DIR/System.map" "$ROOTFS/boot/System.map-$KREL"
+fi
+echo "::endgroup::"
+
+echo "::group::Finalize Alpine rootfs"
+sudo chroot "$ROOTFS" /usr/sbin/sshd -t
+
+# qemu-aarch64-static is a host-side helper and must not ship in the target image.
+sudo rm -f "$ROOTFS/usr/bin/qemu-aarch64-static"
+echo "::endgroup::"
+
+echo "::group::Create ext4 rootfs image"
+USED_MB="$(sudo du -sm "$ROOTFS" | awk '{print $1}')"
+IMAGE_MB=$((USED_MB + 512))
+if [ "$IMAGE_MB" -lt 1024 ]; then IMAGE_MB=1024; fi
+
+ROOTFS_IMG="$OUT_DIR/alpine-channel-rootfs.ext4"
+truncate -s "${IMAGE_MB}M" "$ROOTFS_IMG"
+sudo mkfs.ext4 -F -m 0 -L alpine-rootfs -d "$ROOTFS" "$ROOTFS_IMG"
+sudo e2fsck -fn "$ROOTFS_IMG"
+zstd -T0 -10 -f "$ROOTFS_IMG" -o "$ROOTFS_IMG.zst"
+rm -f "$ROOTFS_IMG"
+echo "::endgroup::"
+
+{
+  echo "distribution=alpine"
+  echo "alpine_version=$ALPINE_VERSION"
+  echo "alpine_branch=$ALPINE_BRANCH"
+  echo "kernel_release=$KREL"
+  echo "rootfs_label=alpine-rootfs"
+  echo "init=openrc"
+  echo "usb_device_ip=172.16.42.1"
+  echo "usb_dhcp_range=172.16.42.2-172.16.42.20"
+  echo "ssh_auth=$SSH_AUTH_MODE"
+  echo "ssh_listen=172.16.42.1"
+  echo "ssh_scope=usb-only"
+  echo "wifi_manager=NetworkManager"
+  echo "wifi_runtime_setup=nmcli"
+  echo "usb_network_manager=unmanaged"
+  echo "wifi_firmware=stock-modem-vendor-readonly"
+  echo "time_sync=chrony"
+} > "$OUT_DIR/build-info.txt"
+ "$ROOTFS/etc/NetworkManager/conf.d/10-channel.conf"
 
 # This image is intentionally headless. Alpine's init spawns gettys from
 # /etc/inittab, independently of OpenRC runlevel links. Remove both forms so
