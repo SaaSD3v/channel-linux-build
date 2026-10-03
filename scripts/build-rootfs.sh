@@ -8,31 +8,10 @@ KERNEL_DIR="${KERNEL_DIR:-}"
 KERNEL_MODULES_ARCHIVE="${KERNEL_MODULES_ARCHIVE:-}"
 KERNEL_CONFIG_FILE="${KERNEL_CONFIG_FILE:-}"
 KERNEL_SYSTEM_MAP_FILE="${KERNEL_SYSTEM_MAP_FILE:-}"
-WIFI_SSID="${WIFI_SSID:-}"
-WIFI_PASSWORD="${WIFI_PASSWORD:-}"
-WIFI_COUNTRY="${WIFI_COUNTRY:-}"
-WIFI_AUTOCONNECT=0
-
 ALPINE_VERSION="${ALPINE_VERSION:-3.24.2}"
 ALPINE_BRANCH="${ALPINE_BRANCH:-v${ALPINE_VERSION%.*}}"
 ALPINE_MIRROR="${ALPINE_MIRROR:-https://dl-cdn.alpinelinux.org/alpine}"
 ALPINE_ARCH="${ALPINE_ARCH:-aarch64}"
-
-if [ -n "$WIFI_SSID" ] || [ -n "$WIFI_PASSWORD" ]; then
-  if [ -z "$WIFI_SSID" ] || [ -z "$WIFI_PASSWORD" ]; then
-    echo "WIFI_SSID and WIFI_PASSWORD must both be set for Wi-Fi autoconnect" >&2
-    exit 2
-  fi
-  WIFI_AUTOCONNECT=1
-fi
-
-if [ -n "$WIFI_COUNTRY" ]; then
-  WIFI_COUNTRY="${WIFI_COUNTRY^^}"
-  if [[ ! "$WIFI_COUNTRY" =~ ^[A-Z]{2}$ ]]; then
-    echo "WIFI_COUNTRY must be a two-letter ISO country code" >&2
-    exit 2
-  fi
-fi
 
 if [ -z "$KERNEL_MODULES_ARCHIVE" ] && [ -z "$KERNEL_DIR" ]; then
   echo "set KERNEL_MODULES_ARCHIVE or KERNEL_DIR" >&2
@@ -84,6 +63,8 @@ sudo chroot "$ROOTFS" /bin/sh -ec '
     procps \
     less nano \
     ethtool iw \
+    dbus dbus-openrc \
+    networkmanager networkmanager-openrc networkmanager-cli networkmanager-wifi \
     wpa_supplicant wireless-regdb \
     chrony \
     openssl
@@ -96,17 +77,11 @@ sudo cp -a "$REPO_ROOT/rootfs/." "$ROOTFS/"
 sudo chmod 0755 \
   "$ROOTFS/usr/local/sbin/channel-usb-gadget" \
   "$ROOTFS/usr/local/sbin/channel-wifi-firmware" \
-  "$ROOTFS/usr/local/sbin/channel-wifi-dhcp" \
-  "$ROOTFS/usr/local/sbin/channel-wifi-config" \
-  "$ROOTFS/usr/local/libexec/channel-udhcpc" \
   "$ROOTFS/etc/init.d/channel-usb-gadget" \
   "$ROOTFS/etc/init.d/channel-sshd" \
-  "$ROOTFS/etc/init.d/channel-wifi-firmware" \
-  "$ROOTFS/etc/init.d/channel-wifi-supplicant" \
-  "$ROOTFS/etc/init.d/channel-wifi-dhcp-client" \
-  "$ROOTFS/etc/init.d/channel-wifi-config"
+  "$ROOTFS/etc/init.d/channel-wifi-firmware"
 
-sudo install -d -m 0755 "$ROOTFS/etc/wpa_supplicant" "$ROOTFS/etc/ssh/sshd_config.d"
+sudo install -d -m 0755 "$ROOTFS/etc/ssh/sshd_config.d"
 
 printf '%s\n' channel | sudo tee "$ROOTFS/etc/hostname" >/dev/null
 sudo tee "$ROOTFS/etc/hosts" >/dev/null <<'EOF'
@@ -276,7 +251,7 @@ done
 for service in hwdrivers modules sysctl hostname bootmisc syslog localmount; do
   sudo chroot "$ROOTFS" /sbin/rc-update add "$service" boot
 done
-for service in chronyd channel-usb-gadget dnsmasq channel-sshd channel-wifi-firmware channel-wifi-config; do
+for service in dbus chronyd channel-usb-gadget dnsmasq channel-sshd channel-wifi-firmware networkmanager; do
   sudo chroot "$ROOTFS" /sbin/rc-update add "$service" default
 done
 
@@ -317,21 +292,6 @@ fi
 echo "::endgroup::"
 
 echo "::group::Finalize Alpine rootfs"
-if [ "$WIFI_AUTOCONNECT" -eq 1 ]; then
-  set +x
-  {
-    echo 'ctrl_interface=/run/wpa_supplicant'
-    echo 'update_config=0'
-    if [ -n "$WIFI_COUNTRY" ]; then
-      printf 'country=%s\n' "$WIFI_COUNTRY"
-    fi
-    printf '%s\n' "$WIFI_PASSWORD" | sudo chroot "$ROOTFS" /sbin/wpa_passphrase "$WIFI_SSID" | \
-      sed '/^[[:space:]]*#psk=/d'
-  } | sudo tee "$ROOTFS/etc/wpa_supplicant/wpa_supplicant-channel.conf" >/dev/null
-  sudo chmod 0600 "$ROOTFS/etc/wpa_supplicant/wpa_supplicant-channel.conf"
-  unset WIFI_PASSWORD
-fi
-
 sudo chroot "$ROOTFS" /usr/sbin/sshd -t
 
 # qemu-aarch64-static is a host-side helper and must not ship in the target image.
@@ -363,9 +323,8 @@ echo "::endgroup::"
   echo "ssh_auth=$SSH_AUTH_MODE"
   echo "ssh_listen=172.16.42.1"
   echo "ssh_scope=usb-only"
-  echo "wifi_autoconnect=$([ "$WIFI_AUTOCONNECT" -eq 1 ] && echo embedded || echo runtime-ready)"
-  echo "wifi_runtime_config=/etc/wpa_supplicant/wpa_supplicant-channel.conf"
-  echo "wifi_runtime_setup=wpa_passphrase"
+  echo "wifi_manager=NetworkManager"
+  echo "wifi_runtime_setup=nmcli"
   echo "wifi_firmware=stock-modem-vendor-readonly"
   echo "time_sync=chrony"
 } > "$OUT_DIR/build-info.txt"
