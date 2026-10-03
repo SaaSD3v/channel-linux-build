@@ -1,6 +1,6 @@
 # Moto G7 Play (channel) — Debian rootfs build
 
-This branch contains the separated Debian rootfs workflow.
+The `debian` branch contains the separated Debian rootfs workflow.
 
 Workflow: `.github/workflows/rootfs.yml`
 
@@ -33,7 +33,7 @@ This workflow does not publish the kernel, DTB, lk2nd, or DTBO as its primary co
 
 ## Manual `Run workflow` fields
 
-Use **Actions → Build Debian rootfs → Run workflow** and keep the launcher branch set to `main`. The launcher checks out `rootfs` before building.
+Use **Actions → Build rootfs → Run workflow** and keep the launcher branch set to `main`. The launcher checks out `debian` before building.
 
 ### `ssh_auth`
 
@@ -92,7 +92,7 @@ Retention: 1 day.
 
 ## Push builds
 
-A push to `rootfs` also runs the workflow.
+A push to `debian` also runs the workflow.
 
 For push-triggered builds the mode is automatic:
 
