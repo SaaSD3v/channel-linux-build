@@ -5,6 +5,6 @@ command="/usr/local/sbin/channel-wifi-firmware"
 
 depend() {
     need localmount
-    after modules mdev
+    after modules udev-trigger
     before networkmanager
 }
