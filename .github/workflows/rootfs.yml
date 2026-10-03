@@ -45,7 +45,6 @@ jobs:
           bash -n scripts/build-rootfs.sh
           sh -n rootfs/usr/local/sbin/channel-usb-gadget
           sh -n rootfs/usr/local/sbin/channel-wifi-firmware
-          sh -n rootfs/usr/local/libexec/channel-udhcpc
           sh -n rootfs/etc/init.d/channel-usb-gadget
           sh -n rootfs/etc/init.d/channel-sshd
           sh -n rootfs/etc/init.d/channel-wifi-firmware
