@@ -2,7 +2,7 @@ name: Build Moto G7 Play mainline Alpine
 
 on:
   push:
-    branches: [alpine]
+    branches: [alpine-build-disabled]
   workflow_dispatch:
     inputs:
       ssh_auth:
