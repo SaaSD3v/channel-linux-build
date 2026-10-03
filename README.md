@@ -47,7 +47,7 @@ Use **Actions → Build rootfs → Run workflow** and keep the launcher branch s
 | `generated-key+generated-password` | Generates both a key and a password and publishes both temporary credential artifacts. |
 | `public-key-input+password-secret` | Uses the `ssh_public_key` input together with `SSH_PASSWORD`. No credential is re-exported. |
 | `public-key-secret+password-secret` | Uses `SSH_PUBLIC_KEY` and `SSH_PASSWORD`. No credential is re-exported. |
-| `disabled` | Builds the rootfs with `ssh.service` disabled and publishes no credential artifact. |
+| `open-root-usb` | Enables direct root SSH only on the USB RNDIS address for bring-up/recovery. |
 
 Default: `generated-key`.
 
@@ -110,7 +110,7 @@ The workflow was then extended with:
 - optional `SSH_PUBLIC_KEY` and `SSH_PASSWORD` secrets;
 - optional generated-password output;
 - key + password combinations;
-- an SSH-disabled mode;
+- the `open-root-usb` recovery mode;
 - temporary generated credential artifacts;
 - authentication-mode recording in `build-info.txt`.
 
@@ -118,3 +118,7 @@ The workflow was then extended with:
 ## Kernel consistency
 
 The internal kernel dependency uses the same validated Channel Wi-Fi path as the main and kernel component builds. The shared helper applies `wcn3620-fix.patch`, the compiled DTB must report `qcom,wcn3620` for the WCNSS IRIS node, and the required WCNSS kernel options are verified before the rootfs is generated.
+
+## Network ownership
+
+The Debian rootfs uses NetworkManager for `wlan0` Wi-Fi. The Channel RNDIS interface `usb0` is explicitly marked unmanaged by NetworkManager so `channel-usb-gadget` and dnsmasq retain exclusive ownership of the fixed `172.16.42.1/24` USB management network.
