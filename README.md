@@ -9,7 +9,7 @@ The repository keeps the complete integrated build on `main` and separate compon
 The build system produces and validates the files needed for the current Channel Debian mainline bring-up:
 
 - mainline ARM64 kernel for the Channel device tree;
-- matching kernel modules and initramfs;
+- matching kernel modules;
 - Debian 13 (Trixie) ARM64 rootfs;
 - `boot-channel.img`;
 - lk2nd for MSM8953/SDM632;
@@ -24,7 +24,7 @@ The repository is organized so the complete build remains available while each m
 | Branch | Purpose | Workflow | Main artifact |
 | --- | --- | --- | --- |
 | `main` | Complete integrated build | `Build Moto G7 Play mainline Debian` | `channel-mainline-debian` |
-| `rootfs` | Debian rootfs + initramfs | `Build Debian rootfs` | `channel-debian-rootfs` |
+| `rootfs` | Debian rootfs + matching modules | `Build Debian rootfs` | `channel-debian-rootfs` |
 | `kernel-mainline-7.1` | Kernel + DTB + modules | `Build kernel mainline 7.1` | `channel-kernel-mainline-7.1` |
 | `dtbo` | Minimal Channel DTBO | `Build channel DTBO` | `channel-dtbo` |
 | `lk2nd` | lk2nd MSM8953 image | `Build lk2nd MSM8953` | `channel-lk2nd-msm8953` |
@@ -44,8 +44,8 @@ A single run performs the complete build sequence:
 5. configures and builds the kernel, DTBs, and modules;
 6. builds lk2nd for `lk2nd-msm8953`;
 7. builds the minimal Channel DTBO;
-8. builds the Debian rootfs and matching initramfs;
-9. packs `boot-channel.img`;
+8. builds the Debian rootfs with the matching kernel modules;
+9. packs the rootfs-independent `boot-channel.img`;
 10. performs the final static checks;
 11. publishes the build artifacts and, when generated, the temporary SSH test key.
 
@@ -59,13 +59,12 @@ The main artifact is retained for 14 days.
 
 It contains:
 
-- `boot-channel.img` — final boot image packed from the kernel/DTB and matching initramfs;
+- `boot-channel.img` — rootfs-independent boot image packed from the kernel/DTB with no initramfs;
 - `lk2nd-msm8953.img` — lk2nd image compiled for the target used by Channel;
 - `dtbo-motorola-channel.img` — minimal DTBO generated for the lk2nd Channel flow;
 - `Image.gz` — compressed ARM64 kernel image;
 - `Image.gz-dtb` — kernel image concatenated with the compiled Channel DTB;
 - `*.dtb` — compiled Channel device tree;
-- `initrd.img-*` — initramfs generated for the kernel release from the same run;
 - `debian-channel-rootfs.ext4.zst` — compressed Debian ext4 rootfs image;
 - `kernel-modules-*.tar.zst` — modules matching the built kernel;
 - `kernel.config` — final integrated kernel configuration;
@@ -94,7 +93,7 @@ The integrated workflow, the separated `rootfs` workflow, and the `kernel-mainli
 
 ## Separated rootfs build
 
-The `rootfs` branch generates the Debian rootfs and matching initramfs independently.
+The `rootfs` branch generates the Debian rootfs with the matching kernel modules independently.
 
 It compiles a kernel internally because the rootfs needs the matching kernel release and module tree, but it publishes only the rootfs-related outputs as its main artifact.
 
@@ -154,7 +153,7 @@ The project-specific configuration fragment is:
 
 The fragment also pins the validated WCNSS path explicitly: WCN36XX, WCNSS PIL/control, Qualcomm SMD/SMEM/SMP2P/SMSM, cfg80211 and mac80211. The build helper verifies their final built-in/module states so an upstream defconfig change cannot silently remove Channel Wi-Fi support.
 
-It is merged on top of the ARM64 defconfig and carries the storage, initramfs, USB gadget, RNDIS, networking, and bring-up options required by the current build.
+It is merged on top of the ARM64 defconfig and carries the storage, USB gadget, RNDIS, networking, and bring-up options required by the current build. Initramfs support remains enabled in the kernel for compatibility, but the normal Channel boot path no longer uses one.
 
 The integrated and separated kernel builds use the same validated Channel Wi-Fi patch. The separated kernel build publishes the kernel image, Channel DTB, combined kernel+DTB image, matching modules, configuration, release string, source revision, `System.map`, the applied patch, and hashes.
 
@@ -196,9 +195,9 @@ The build creates an ext4 image with label:
 
 `debian-rootfs`
 
-The integrated boot command line uses the root filesystem by label and waits for the storage device before mounting it.
+The integrated boot command line mounts the fixed Channel root partition by GPT PARTUUID `76dbdefa-f243-cd22-5da5-9374e6ad318b` and waits for storage before mounting it.
 
-The rootfs build installs the matching kernel modules, creates the matching initramfs, applies the repository overlay under `rootfs/`, validates the target sshd configuration, and then creates the compressed ext4 image.
+The rootfs build installs the matching kernel modules, applies the repository overlay under `rootfs/`, validates the target sshd configuration, and then creates the compressed ext4 image. It does not generate an initramfs.
 
 
 ### First Wi-Fi connection
@@ -243,7 +242,7 @@ Each of those directories now contains its own README describing the files maint
 
 The generated rootfs is a standalone ext4 image labeled `debian-rootfs`.
 
-The current boot image expects that label and uses `rootwait` so the kernel waits for the root filesystem to become available. `scripts/build-bootimg.sh` is the canonical packer used by the integrated workflow, so the boot cmdline is defined in one place.
+The filesystem label is retained for identification, but the boot image does not depend on it. `scripts/build-bootimg.sh` uses `root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b rootfstype=ext4 rootwait rw` and contains no initramfs, so the same boot image can start Debian, Alpine, or Ubuntu when flashed to the same root partition with matching kernel modules.
 
 The repository does not perform an automatic device repartitioning step. Storage placement and flashing remain separate from the build itself.
 
