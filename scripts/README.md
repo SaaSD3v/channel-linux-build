@@ -12,7 +12,7 @@ The main, separated kernel, and rootfs workflows use this helper for kernel conf
 
 Creates the Debian Trixie ARM64 rootfs, copies the `rootfs/` overlay, installs the matching kernel modules, validates the target sshd configuration, and produces the compressed ext4 image without an initramfs.
 
-The exact SSH authentication behavior depends on the version of this script in the branch. The separated `rootfs` branch includes the selectable authentication modes documented in its top-level README.
+The separated `debian` branch includes the selectable SSH authentication modes documented in its top-level README, including `open-root-usb` for local bring-up.
 
 ## `build-bootimg.sh`
 
