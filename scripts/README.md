@@ -6,8 +6,8 @@ Builds the existing Channel mainline kernel, DTB and modules and validates the W
 
 ## `build-rootfs.sh`
 
-Bootstraps Alpine 3.24.2 aarch64 from the official minirootfs, verifies its SHA-256, installs the required `apk` packages, applies `rootfs/`, configures OpenRC/SSH/Wi-Fi, installs the matching kernel modules, builds an Alpine `mkinitfs` initramfs, and creates `alpine-channel-rootfs.ext4.zst`.
+Bootstraps Alpine 3.24.2 aarch64 from the official minirootfs, verifies its SHA-256, installs the required `apk` packages, applies `rootfs/`, configures OpenRC/SSH/Wi-Fi, installs the matching kernel modules, and creates `alpine-channel-rootfs.ext4.zst` without generating an initramfs.
 
 ## `build-bootimg.sh`
 
-Packs `boot-channel.img` from the kernel + Channel DTB + Alpine initramfs. The default command line mounts `root=LABEL=alpine-rootfs`.
+Packs the shared `boot-channel.img` from the kernel + Channel DTB with no initramfs. The default command line mounts `root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b`.
