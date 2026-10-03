@@ -98,12 +98,15 @@ sudo chmod 0755 \
   "$ROOTFS/usr/local/sbin/channel-usb-gadget" \
   "$ROOTFS/usr/local/sbin/channel-wifi-firmware" \
   "$ROOTFS/usr/local/sbin/channel-wifi-dhcp" \
-  "$ROOTFS/usr/local/sbin/channel-wifi" \
+  "$ROOTFS/usr/local/sbin/channel-wifi-config" \
   "$ROOTFS/usr/local/libexec/channel-udhcpc" \
   "$ROOTFS/etc/init.d/channel-usb-gadget" \
   "$ROOTFS/etc/init.d/channel-dhcp" \
   "$ROOTFS/etc/init.d/channel-sshd" \
-  "$ROOTFS/etc/init.d/channel-wifi"
+  "$ROOTFS/etc/init.d/channel-wifi-firmware" \
+  "$ROOTFS/etc/init.d/channel-wifi-supplicant" \
+  "$ROOTFS/etc/init.d/channel-wifi-dhcp-client" \
+  "$ROOTFS/etc/init.d/channel-wifi-config"
 
 sudo install -d -m 0755 "$ROOTFS/etc/wpa_supplicant" "$ROOTFS/etc/ssh/sshd_config.d"
 
@@ -275,7 +278,7 @@ done
 for service in hwdrivers modules sysctl hostname bootmisc syslog localmount; do
   sudo chroot "$ROOTFS" /sbin/rc-update add "$service" boot
 done
-for service in chronyd channel-usb-gadget channel-dhcp channel-sshd channel-wifi; do
+for service in chronyd channel-usb-gadget channel-dhcp channel-sshd channel-wifi-firmware channel-wifi-config; do
   sudo chroot "$ROOTFS" /sbin/rc-update add "$service" default
 done
 
