@@ -1,8 +1,8 @@
-name: Build Debian rootfs
+name: Build rootfs
 
 on:
   push:
-    branches: [rootfs]
+    branches: [debian]
   workflow_dispatch:
     inputs:
       ssh_auth:
@@ -27,6 +27,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: channel-debian-rootfs
+  cancel-in-progress: true
 
 env:
   KERNEL_URL: https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git
@@ -93,7 +97,7 @@ jobs:
           grep -qx 'CONFIG_QCOM_WCNSS_CTRL=m' "out/kernel.config-$KREL"
           grep -qx 'CONFIG_RPMSG_QCOM_SMD=y' "out/kernel.config-$KREL"
 
-      - name: Build Debian rootfs
+      - name: Build rootfs
         env:
           KERNEL_DIR: ${{ github.workspace }}/kernel
           OUT_DIR: ${{ github.workspace }}/out
