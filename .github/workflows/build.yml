@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       ssh_auth:
-        description: SSH authentication mode
+        description: SSH authentication mode (open-root-usb = direct root login on USB only)
         required: true
         type: choice
         default: generated-key
@@ -19,7 +19,7 @@ on:
           - generated-key+generated-password
           - public-key-input+password-secret
           - public-key-secret+password-secret
-          - disabled
+          - open-root-usb
       ssh_public_key:
         description: Public key to install when using a public-key-input mode
         required: false
