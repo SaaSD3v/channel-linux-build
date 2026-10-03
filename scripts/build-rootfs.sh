@@ -74,7 +74,7 @@ fi
 sudo chroot "$ROOTFS" /bin/sh -ec '
   apk update
   apk add --no-cache \
-    openrc \
+    openrc busybox-openrc busybox-mdev-openrc \
     openssh-server openssh-client \
     iproute2 \
     dnsmasq \
