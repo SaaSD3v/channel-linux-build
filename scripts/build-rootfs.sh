@@ -356,7 +356,7 @@ test -s "$INITRAMFS"
 
 # qemu-aarch64-static is a host-side helper and must not ship in the target image.
 sudo rm -f "$ROOTFS/usr/bin/qemu-aarch64-static"
-sudo cp "$INITRAMFS" "$OUT_DIR/initrd.img-$KREL"
+sudo install -m 0644 "$INITRAMFS" "$OUT_DIR/initrd.img-$KREL"
 
 INITRD_SIZE="$(stat -c %s "$OUT_DIR/initrd.img-$KREL")"
 if [ "$INITRD_SIZE" -gt $((48 * 1024 * 1024)) ]; then
