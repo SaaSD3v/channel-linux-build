@@ -29,10 +29,10 @@ VENDOR_DEV="$(find_part vendor_a vendor_b 2>/dev/null || true)"
 [ -n "$MODEM_DEV" ] || { echo "channel-wifi: modem partition not found" >&2; exit 1; }
 [ -n "$VENDOR_DEV" ] || { echo "channel-wifi: vendor partition not found" >&2; exit 1; }
 
-if ! mountpoint -q "$MODEM_MNT"; then
+if ! /bin/busybox mountpoint -q "$MODEM_MNT"; then
     mount -t ext4 -o ro,nosuid,nodev,noexec "$MODEM_DEV" "$MODEM_MNT"
 fi
-if ! mountpoint -q "$VENDOR_MNT"; then
+if ! /bin/busybox mountpoint -q "$VENDOR_MNT"; then
     mount -t ext4 -o ro,nosuid,nodev,noexec "$VENDOR_DEV" "$VENDOR_MNT"
 fi
 
