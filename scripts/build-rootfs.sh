@@ -282,7 +282,10 @@ for service in dbus chronyd channel-usb-gadget channel-dhcp channel-sshd channel
   sudo chroot "$ROOTFS" /sbin/rc-update add "$service" default
 done
 
-# Do not expose a local root login in open-root-usb mode.
+# This image is intentionally headless. Alpine's init spawns gettys from
+# /etc/inittab, independently of OpenRC runlevel links. Remove both forms so
+# open-root-usb cannot expose the empty root password on a local/serial console.
+sudo sed -i -E '/::(respawn|askfirst):.*(a?getty)/d' "$ROOTFS/etc/inittab"
 sudo rm -f "$ROOTFS"/etc/runlevels/default/agetty.* "$ROOTFS"/etc/runlevels/default/consolefont 2>/dev/null || true
 
 # Keep persistent logs for headless bring-up.
