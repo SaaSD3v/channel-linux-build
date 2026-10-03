@@ -8,9 +8,9 @@ Primary artifact: `channel-debian-rootfs`
 
 ## What the workflow builds
 
-The run compiles a fresh kernel dependency first because the generated rootfs needs a matching kernel release, modules, and initramfs.
+The run compiles a fresh kernel dependency first because the generated rootfs needs a matching kernel release and module tree.
 
-That kernel build is an internal dependency of this workflow. The published artifact remains focused on the rootfs.
+That kernel build is an internal dependency of this workflow. The published artifact remains focused on the rootfs and does not include or generate an initramfs.
 
 The workflow uses:
 
@@ -26,7 +26,6 @@ Retained for 14 days.
 It contains:
 
 - `debian-channel-rootfs.ext4.zst` — final compressed ext4 rootfs image;
-- `initrd.img-*` — initramfs generated for the matching kernel release;
 - `build-info.txt` — rootfs build metadata, including the selected SSH authentication mode;
 - `SHA256SUMS.rootfs` — hashes for the generated rootfs outputs.
 
