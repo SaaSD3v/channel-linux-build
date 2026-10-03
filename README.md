@@ -10,7 +10,7 @@ The rootfs is based on the official **Ubuntu Base 26.04.1 LTS (Resolute) ARM64**
 - OpenSSH;
 - iproute2 and ping;
 - dnsmasq;
-- initramfs-tools + BusyBox;
+- BusyBox for the existing runtime DHCP helper;
 - WCN36xx userspace tools (`iw`, `wpasupplicant`, `wireless-regdb`);
 - systemd-timesyncd;
 - small administration utilities.
@@ -57,10 +57,10 @@ The path unit starts the dependency chain when the file exists. Stock modem/vend
 
 ## Build
 
-The integrated workflow builds the kernel, modules, lk2nd, Channel DTBO, Ubuntu rootfs/initramfs and `boot-channel.img`.
+The integrated workflow builds the kernel, modules, lk2nd, Channel DTBO, Ubuntu rootfs and the shared rootfs-independent `boot-channel.img`.
 
 The default boot cmdline uses:
 
-`root=LABEL=ubuntu-rootfs rootfstype=ext4 rootwait rw`
+`root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b rootfstype=ext4 rootwait rw`
 
-SSH authentication modes from the Debian branch are preserved, including `open-root-usb` for bring-up.
+The boot image contains no initramfs; the `ubuntu-rootfs` label remains for filesystem identification only. SSH authentication modes from the Debian branch are preserved, including `open-root-usb` for bring-up.
