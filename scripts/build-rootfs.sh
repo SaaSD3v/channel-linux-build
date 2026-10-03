@@ -47,8 +47,6 @@ MINIROOTFS="alpine-minirootfs-${ALPINE_VERSION}-${ALPINE_ARCH}.tar.gz"
 MINIROOTFS_URL="${ALPINE_MIRROR}/${ALPINE_BRANCH}/releases/${ALPINE_ARCH}/${MINIROOTFS}"
 MINIROOTFS_PATH="$WORK_DIR/$MINIROOTFS"
 MINIROOTFS_SHA_PATH="$MINIROOTFS_PATH.sha256"
-APK_STATIC_DIR="$WORK_DIR/apk-static"
-APK_INDEX_URL="${ALPINE_MIRROR}/${ALPINE_BRANCH}/main/x86_64/APKINDEX.tar.gz"
 
 mkdir -p "$WORK_DIR" "$OUT_DIR"
 sudo rm -rf "$ROOTFS"
@@ -73,32 +71,9 @@ if [ -x /usr/bin/qemu-aarch64-static ]; then
   sudo install -m 0755 /usr/bin/qemu-aarch64-static "$ROOTFS/usr/bin/qemu-aarch64-static"
 fi
 
-# Use the host-native static apk binary to populate the aarch64 root. Running
-# the target aarch64 apk under QEMU can fail while applying setuid/setgid bits
-# to package payloads even though package resolution itself succeeds.
-rm -rf "$APK_STATIC_DIR"
-mkdir -p "$APK_STATIC_DIR"
-APK_TOOLS_STATIC_PKG="$(
-  curl -fsSL --retry 3 "$APK_INDEX_URL" |
-    tar -xzO APKINDEX |
-    awk '
-      /^P:apk-tools-static$/ { found=1; next }
-      found && /^V:/ { print "apk-tools-static-" substr($0,3) ".apk"; exit }
-    '
-)"
-[ -n "$APK_TOOLS_STATIC_PKG" ] || { echo "failed to resolve apk-tools-static" >&2; exit 1; }
-APK_TOOLS_STATIC_URL="${ALPINE_MIRROR}/${ALPINE_BRANCH}/main/x86_64/${APK_TOOLS_STATIC_PKG}"
-curl -fsSL --retry 3 "$APK_TOOLS_STATIC_URL" -o "$APK_STATIC_DIR/$APK_TOOLS_STATIC_PKG"
-tar -xzf "$APK_STATIC_DIR/$APK_TOOLS_STATIC_PKG" -C "$APK_STATIC_DIR" sbin/apk.static
-chmod 0755 "$APK_STATIC_DIR/sbin/apk.static"
-
-sudo "$APK_STATIC_DIR/sbin/apk.static" \
-  --root "$ROOTFS" \
-  --arch "$ALPINE_ARCH" \
-  --keys-dir "$ROOTFS/etc/apk/keys" \
-  --repositories-file "$ROOTFS/etc/apk/repositories" \
-  --update-cache \
-  add \
+sudo chroot "$ROOTFS" /bin/sh -ec '
+  apk update
+  apk add --no-cache \
     openrc busybox-openrc busybox-mdev-openrc \
     openssh-server openssh-client \
     iproute2 \
@@ -113,8 +88,8 @@ sudo "$APK_STATIC_DIR/sbin/apk.static" \
     chrony \
     mkinitfs \
     openssl
-
-sudo chroot "$ROOTFS" /usr/sbin/update-ca-certificates
+  update-ca-certificates
+'
 echo "::endgroup::"
 
 echo "::group::Install Channel Alpine headless configuration"
