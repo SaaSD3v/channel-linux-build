@@ -4,29 +4,13 @@ on:
   push:
     branches: [kernel-mainline-7.1]
   workflow_dispatch:
-    inputs:
-      ssh_auth:
-        description: SSH authentication mode (open-root-usb = direct root login on USB only)
-        required: true
-        type: choice
-        default: generated-key
-        options:
-          - generated-key
-          - public-key-input
-          - public-key-secret
-          - generated-password
-          - password-secret
-          - generated-key+generated-password
-          - public-key-input+password-secret
-          - public-key-secret+password-secret
-          - open-root-usb
-      ssh_public_key:
-        description: Public key to install when using a public-key-input mode
-        required: false
-        type: string
 
 permissions:
   contents: read
+
+concurrency:
+  group: channel-kernel-mainline-7.1
+  cancel-in-progress: true
 
 env:
   KERNEL_URL: https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git
@@ -36,45 +20,27 @@ env:
 jobs:
   kernel:
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 120
 
     steps:
-      - name: Checkout build files
+      - name: Checkout kernel build files
         uses: actions/checkout@v4
 
-      - name: Validate shared build scripts
+      - name: Validate kernel build scripts
         run: |
           set -eux
           bash -n scripts/build-kernel.sh
-          bash -n scripts/build-rootfs.sh
           bash -n scripts/build-bootimg.sh
-          sh -n rootfs/usr/local/sbin/channel-usb-gadget
-          sh -n rootfs/usr/local/sbin/channel-wifi-firmware
-          sh -n rootfs/usr/local/sbin/channel-wifi-dhcp
-          sh -n rootfs/usr/local/libexec/channel-udhcpc
 
-      - name: Install build dependencies
+      - name: Install kernel build dependencies
         run: |
           set -euxo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            git ca-certificates curl make bc bison flex \
+            git ca-certificates make bc bison flex \
             gcc-aarch64-linux-gnu device-tree-compiler \
             libssl-dev libelf-dev dwarves \
-            python3 python3-pip rsync cpio gzip xz-utils zstd \
-            e2fsprogs mmdebstrap arch-test qemu-user-static binfmt-support \
-            openssh-client openssl kmod file
-
-          DEBIAN_KEYRING_DEB=/tmp/debian-archive-keyring_2025.1_all.deb
-          curl -fsSL --retry 3 \
-            https://deb.debian.org/debian/pool/main/d/debian-archive-keyring/debian-archive-keyring_2025.1_all.deb \
-            -o "$DEBIAN_KEYRING_DEB"
-          echo '9ea7778e443144ca490668737a8ab22dd3e748bb99e805e22ec055abeb3c7fac  /tmp/debian-archive-keyring_2025.1_all.deb' | sha256sum -c -
-          sudo dpkg -i "$DEBIAN_KEYRING_DEB"
-          test -s /usr/share/keyrings/debian-archive-keyring.gpg
-
-          sudo update-binfmts --enable qemu-aarch64
-          arch-test arm64
+            python3 zstd file
 
           rm -rf aosp-mkbootimg
           git init aosp-mkbootimg
@@ -85,10 +51,10 @@ jobs:
           python3 aosp-mkbootimg/mkbootimg.py --help >/dev/null
           python3 aosp-mkbootimg/unpack_bootimg.py --help >/dev/null
 
-      - name: Clone fresh channel mainline kernel
+      - name: Clone fresh Channel mainline kernel
         run: |
           set -euxo pipefail
-          rm -rf kernel out .work
+          rm -rf kernel out
           mkdir -p out
           git clone --depth=1 --branch channel "$KERNEL_URL" kernel
           {
@@ -98,7 +64,7 @@ jobs:
             git -C kernel log -1 --date=iso --format='%H%n%ad%n%an%n%s'
           } | tee out/source-report.txt
 
-      - name: Configure and build kernel
+      - name: Configure and build Channel kernel
         env:
           KERNEL_DIR: ${{ github.workspace }}/kernel
           OUT_DIR: ${{ github.workspace }}/out
@@ -135,54 +101,35 @@ jobs:
             git -C kernel diff -- arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dts
           } >> out/source-report.txt
 
-      - name: Build matching Debian rootfs and initramfs
-        env:
-          KERNEL_DIR: ${{ github.workspace }}/kernel
-          OUT_DIR: ${{ github.workspace }}/out
-          WORK_DIR: ${{ github.workspace }}/.work
-          KERNEL_RELEASE: ${{ env.KERNEL_RELEASE }}
-          SSH_AUTH_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.ssh_auth || 'auto' }}
-          SSH_PUBLIC_KEY_INPUT: ${{ inputs.ssh_public_key }}
-          SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
-          WIFI_SSID: ${{ secrets.WIFI_SSID }}
-          WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
-          WIFI_COUNTRY: ${{ secrets.WIFI_COUNTRY }}
-        run: |
-          set -euxo pipefail
-          chmod +x scripts/build-rootfs.sh
-          MODULES_ARCHIVE="$(ls out/kernel-modules-*.tar.zst | head -n1)"
-          test -s "$MODULES_ARCHIVE"
-          export KERNEL_MODULES_ARCHIVE="$GITHUB_WORKSPACE/$MODULES_ARCHIVE"
-          export KERNEL_CONFIG_FILE="$GITHUB_WORKSPACE/out/kernel.config-$KERNEL_RELEASE"
-          export KERNEL_SYSTEM_MAP_FILE="$GITHUB_WORKSPACE/out/System.map"
-          scripts/build-rootfs.sh
-
-      - name: Pack boot-channel.img like main
+      - name: Pack rootfs-independent boot image
         env:
           KERNEL_RELEASE: ${{ env.KERNEL_RELEASE }}
           OUT_DIR: ${{ github.workspace }}/out
           KERNEL_IMAGE: ${{ github.workspace }}/out/Image.gz
           CHANNEL_DTB: ${{ github.workspace }}/out/sdm632-motorola-channel.dtb
           MKBOOTIMG_PY: ${{ github.workspace }}/aosp-mkbootimg/mkbootimg.py
+          CHANNEL_ROOT_PARTUUID: 76dbdefa-f243-cd22-5da5-9374e6ad318b
         run: |
           set -euxo pipefail
           chmod +x scripts/build-bootimg.sh
           scripts/build-bootimg.sh
 
           test -s out/boot-channel.img
-          test -s "out/initrd.img-$KERNEL_RELEASE"
-          test -s out/debian-channel-rootfs.ext4.zst
+          test -s out/kernel-cmdline.txt
+          grep -q 'root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b' out/kernel-cmdline.txt
+          ! grep -q 'root=LABEL=' out/kernel-cmdline.txt
 
           rm -rf /tmp/unpacked-boot
           python3 aosp-mkbootimg/unpack_bootimg.py \
             --boot_img out/boot-channel.img \
             --out /tmp/unpacked-boot
+
           test -s /tmp/unpacked-boot/kernel
-          test -s /tmp/unpacked-boot/ramdisk
+          test ! -s /tmp/unpacked-boot/ramdisk
 
           {
             echo
-            echo "=== boot image ==="
+            echo "=== rootfs-independent boot image ==="
             printf 'cmdline='
             cat out/kernel-cmdline.txt
             file out/boot-channel.img
@@ -194,13 +141,11 @@ jobs:
             out/Image.gz-dtb \
             out/Image.gz-dtb-* \
             out/sdm632-motorola-channel.dtb \
-            out/initrd.img-* \
-            out/debian-channel-rootfs.ext4.zst \
             out/kernel-modules-*.tar.zst \
             out/wcn3620-fix.patch \
             > out/SHA256SUMS
 
-      - name: Upload boot-channel.img
+      - name: Upload boot image
         uses: actions/upload-artifact@v4
         with:
           name: boot-channel-img
@@ -208,19 +153,17 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload remaining kernel artifacts
+      - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
           name: channel-kernel-mainline-7.1
           path: |
+            out/boot-channel.img
+            out/kernel-cmdline.txt
             out/Image.gz
             out/Image.gz-dtb
             out/Image.gz-dtb-*
             out/sdm632-motorola-channel.dtb
-            out/initrd.img-*
-            out/debian-channel-rootfs.ext4.zst
-            out/build-info.txt
-            out/kernel-cmdline.txt
             out/kernel.config-*
             out/kernel-release.txt
             out/kernel-git-revision.txt
@@ -231,14 +174,3 @@ jobs:
             out/SHA256SUMS
           if-no-files-found: error
           retention-days: 14
-
-      - name: Upload generated SSH test key
-        if: always() && hashFiles('out/channel_test_ed25519') != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: channel-kernel-ssh-test-key
-          path: |
-            out/channel_test_ed25519
-            out/channel_test_ed25519.pub
-          if-no-files-found: ignore
-          retention-days: 1
