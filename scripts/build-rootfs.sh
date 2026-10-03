@@ -321,6 +321,18 @@ sudo tee "$ROOTFS/etc/mkinitfs/mkinitfs.conf" >/dev/null <<'EOF'
 features="base ext4"
 EOF
 
+# Channel's root-storage path is built into the kernel. Keep the early userspace
+# independent of the distro's kernel-module packaging: mkinitfs only needs the
+# base userspace to locate LABEL=alpine-rootfs and switch_root into it.
+if [ -n "$KERNEL_CONFIG_FILE" ] && [ -s "$KERNEL_CONFIG_FILE" ]; then
+  for option in CONFIG_EXT4_FS CONFIG_MMC CONFIG_MMC_BLOCK CONFIG_MMC_SDHCI CONFIG_MMC_SDHCI_PLTFM CONFIG_MMC_SDHCI_MSM; do
+    grep -q "^$option=y$" "$KERNEL_CONFIG_FILE" || {
+      echo "$option must be built-in when generating the module-free Channel initramfs" >&2
+      exit 1
+    }
+  done
+fi
+
 if [ "$WIFI_AUTOCONNECT" -eq 1 ]; then
   set +x
   {
@@ -337,7 +349,7 @@ if [ "$WIFI_AUTOCONNECT" -eq 1 ]; then
 fi
 
 sudo chroot "$ROOTFS" /usr/sbin/sshd -t
-sudo chroot "$ROOTFS" /sbin/mkinitfs -c /etc/mkinitfs/mkinitfs.conf -b / "$KREL"
+sudo chroot "$ROOTFS" /sbin/mkinitfs -n -c /etc/mkinitfs/mkinitfs.conf -b / -o "/boot/initramfs-$KREL" "$KREL"
 
 INITRAMFS="$ROOTFS/boot/initramfs-$KREL"
 test -s "$INITRAMFS"
