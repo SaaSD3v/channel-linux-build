@@ -5,7 +5,7 @@ G=/sys/kernel/config/usb_gadget/channel
 
 modprobe configfs 2>/dev/null || true
 modprobe libcomposite 2>/dev/null || true
-if ! mountpoint -q /sys/kernel/config; then
+if ! /bin/busybox mountpoint -q /sys/kernel/config; then
     mount -t configfs configfs /sys/kernel/config
 fi
 
