@@ -53,39 +53,33 @@ Manual builds support the existing authentication modes:
 
 ## Wi-Fi
 
-The Channel WCNSS flow is preserved. `channel-wifi-firmware` mounts the stock modem/vendor partitions read-only, exposes the WCNSS firmware/NV files, starts `qcom_wcnss_pil`, then loads `wcn36xx`.
+The Channel WCNSS flow is preserved. `channel-wifi-firmware` mounts the stock
+modem/vendor partitions read-only, exposes the WCNSS firmware/NV files, starts
+`qcom_wcnss_pil`, then loads `wcn36xx`.
 
-The Alpine branch keeps the same service split used by Debian:
+Alpine's packaged NetworkManager service owns `wlan0`, Wi-Fi association,
+DHCP, routes, and DNS. The firmware service is ordered before NetworkManager.
 
-`channel-wifi-firmware` -> `channel-wifi-supplicant` -> `channel-wifi-dhcp-client`
-
-`channel-wifi-config` is the OpenRC equivalent of Debian's `channel-wifi-config.path`. It watches for:
-
-`/etc/wpa_supplicant/wpa_supplicant-channel.conf`
-
-When the file appears, the watcher starts the DHCP-client service; OpenRC dependencies then start the supplicant and firmware services in the same order as the Debian systemd units.
-
-To configure Wi-Fi at runtime:
+Configure Wi-Fi at runtime with:
 
 ```sh
-wpa_passphrase "<network-name>" "<password>" > /etc/wpa_supplicant/wpa_supplicant-channel.conf
-chmod 600 /etc/wpa_supplicant/wpa_supplicant-channel.conf
+nmcli dev wifi list
+nmcli dev wifi connect "<network-name>" password "<password>"
 ```
 
-The service notices the file without requiring a reboot. CI can also embed credentials with the existing `WIFI_SSID`, `WIFI_PASSWORD`, and optional `WIFI_COUNTRY` secrets.
-
-After DHCP succeeds, the hook restarts `chronyd` so devices whose RTC starts near the Unix epoch immediately retry network time synchronization.
+NetworkManager persists the connection profile for later boots. The old
+Channel-specific supplicant, DHCP-client, config-watcher, and udhcpc helpers
+are not used.
 
 ## Rootfs overlay
 
 Project-owned Alpine runtime files live in `rootfs/`:
 
-- `etc/init.d/` — device-specific OpenRC services; USB DHCP itself uses Alpine's packaged `dnsmasq` service;
+- `etc/init.d/` — Channel hardware/USB OpenRC services; Wi-Fi management itself uses Alpine's packaged `networkmanager` service;
 - `etc/ssh/` — USB-only sshd policy;
 - `etc/chrony/` — NTP configuration;
 - `etc/modprobe.d/` — WCNSS autoload ordering;
-- `usr/local/sbin/` — USB and Wi-Fi runtime helpers;
-- `usr/local/libexec/` — the `udhcpc` lease hook.
+- `usr/local/sbin/` — the USB gadget and Channel WCNSS firmware helpers.
 
 ## Storage
 
