@@ -58,7 +58,6 @@ jobs:
           bash -n scripts/build-bootimg.sh
           sh -n rootfs/usr/local/sbin/channel-usb-gadget
           sh -n rootfs/usr/local/sbin/channel-wifi-firmware
-          sh -n rootfs/usr/local/libexec/channel-udhcpc
 
       - name: Install build dependencies
         run: |
