@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+CONF=/etc/wpa_supplicant/wpa_supplicant-channel.conf
+
+while :; do
+    if [ -s "$CONF" ]; then
+        if ! rc-service channel-wifi-dhcp-client status >/dev/null 2>&1; then
+            rc-service channel-wifi-dhcp-client start || true
+        fi
+    fi
+    sleep 2
+done
