@@ -80,7 +80,7 @@ rm -f "$KEYFILE"
 
 ALLOW_KEY=0
 ALLOW_PASSWORD=0
-ENABLE_SSH=1
+ALLOW_EMPTY_SSH=0
 ROOT_PASSWORD=""
 
 install_public_key() {
@@ -149,8 +149,12 @@ case "$SSH_AUTH_MODE" in
     ROOT_PASSWORD="$SSH_PASSWORD"
     ALLOW_PASSWORD=1
     ;;
+  open-root-usb)
+    ALLOW_EMPTY_SSH=1
+    ;;
   disabled)
-    ENABLE_SSH=0
+    echo "SSH mode 'disabled' was removed; use open-root-usb for direct USB root login" >&2
+    exit 2
     ;;
   *)
     echo "Unsupported SSH_AUTH_MODE: $SSH_AUTH_MODE" >&2
@@ -169,13 +173,47 @@ else
   unset RANDOM_PASSWORD ROOT_HASH
 fi
 
+if [ "$ALLOW_EMPTY_SSH" -eq 1 ]; then
+  # Keep the Unix root password non-empty so local/serial login is not opened.
+  # The USB-only sshd accepts its initial empty "none" authentication through
+  # a dedicated PAM policy instead.
+  sudo tee "$ROOTFS/etc/pam.d/sshd" >/dev/null <<'EOF'
+# Channel USB-only open-root SSH mode.
+auth required pam_permit.so
+account required pam_permit.so
+session required pam_permit.so
+EOF
+fi
+
+if [ "$ALLOW_EMPTY_SSH" -eq 1 ]; then
+  SSH_ROOT_LOGIN=yes
+  SSH_PUBKEY=no
+  SSH_PASSWORD_AUTH=yes
+  SSH_EMPTY_PASSWORDS=yes
+elif [ "$ALLOW_PASSWORD" -eq 1 ]; then
+  SSH_ROOT_LOGIN=yes
+  SSH_PUBKEY=$([ "$ALLOW_KEY" -eq 1 ] && echo yes || echo no)
+  SSH_PASSWORD_AUTH=yes
+  SSH_EMPTY_PASSWORDS=no
+elif [ "$ALLOW_KEY" -eq 1 ]; then
+  SSH_ROOT_LOGIN=prohibit-password
+  SSH_PUBKEY=yes
+  SSH_PASSWORD_AUTH=no
+  SSH_EMPTY_PASSWORDS=no
+else
+  echo "No usable SSH authentication method selected" >&2
+  exit 2
+fi
+
 sudo tee "$ROOTFS/etc/ssh/sshd_config.d/10-channel-usb.conf" >/dev/null <<EOF
 ListenAddress 172.16.42.1
-PermitRootLogin $([ "$ALLOW_PASSWORD" -eq 1 ] && echo yes || { [ "$ALLOW_KEY" -eq 1 ] && echo prohibit-password || echo no; })
-PubkeyAuthentication $([ "$ALLOW_KEY" -eq 1 ] && echo yes || echo no)
-PasswordAuthentication $([ "$ALLOW_PASSWORD" -eq 1 ] && echo yes || echo no)
+AllowUsers root
+PermitRootLogin $SSH_ROOT_LOGIN
+PubkeyAuthentication $SSH_PUBKEY
+PasswordAuthentication $SSH_PASSWORD_AUTH
 KbdInteractiveAuthentication no
-PermitEmptyPasswords no
+PermitEmptyPasswords $SSH_EMPTY_PASSWORDS
+UsePAM yes
 UseDNS no
 EOF
 
@@ -193,11 +231,7 @@ sudo systemctl --root="$ROOTFS" enable \
   channel-usb-gadget.service channel-dhcp.service \
   channel-wifi-firmware.service dbus.socket systemd-timesyncd.service
 
-if [ "$ENABLE_SSH" -eq 1 ]; then
-  sudo systemctl --root="$ROOTFS" enable ssh.service
-else
-  sudo systemctl --root="$ROOTFS" disable ssh.service 2>/dev/null || true
-fi
+sudo systemctl --root="$ROOTFS" enable ssh.service
 
 if [ "$WIFI_AUTOCONNECT" -eq 1 ]; then
   sudo systemctl --root="$ROOTFS" enable channel-wifi-supplicant.service channel-wifi-dhcp-client.service
@@ -329,6 +363,8 @@ echo "::endgroup::"
   echo "usb_device_ip=172.16.42.1"
   echo "usb_dhcp_range=172.16.42.2-172.16.42.20"
   echo "ssh_auth=$SSH_AUTH_MODE"
+  echo "ssh_listen=172.16.42.1"
+  echo "ssh_scope=usb-only"
   echo "wifi_autoconnect=$([ "$WIFI_AUTOCONNECT" -eq 1 ] && echo enabled || echo disabled)"
   echo "wifi_firmware=stock-modem-vendor-readonly"
   echo "time_sync=systemd-timesyncd"
