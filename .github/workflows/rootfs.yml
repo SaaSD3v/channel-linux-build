@@ -84,7 +84,7 @@ jobs:
           test -s out/kernel-release.txt
           test -s kernel/System.map
 
-      - name: Build Alpine rootfs and initramfs
+      - name: Build Alpine rootfs
         env:
           KERNEL_DIR: ${{ github.workspace }}/kernel
           OUT_DIR: ${{ github.workspace }}/out
@@ -104,11 +104,10 @@ jobs:
           scripts/build-rootfs.sh
 
           test -s out/alpine-channel-rootfs.ext4.zst
-          test -s "out/initrd.img-$KERNEL_RELEASE"
           grep -q '^distribution=alpine$' out/build-info.txt
           grep -q '^init=openrc$' out/build-info.txt
           grep -q '^time_sync=chrony$' out/build-info.txt
-          sha256sum out/alpine-channel-rootfs.ext4.zst "out/initrd.img-$KERNEL_RELEASE" \
+          sha256sum out/alpine-channel-rootfs.ext4.zst \
             out/build-info.txt | tee out/SHA256SUMS.rootfs
 
       - name: Upload rootfs artifacts
@@ -117,7 +116,6 @@ jobs:
           name: channel-alpine-rootfs
           path: |
             out/alpine-channel-rootfs.ext4.zst
-            out/initrd.img-*
             out/build-info.txt
             out/SHA256SUMS.rootfs
           if-no-files-found: error
