@@ -38,22 +38,23 @@ The expected host behavior is automatic DHCP; a manual Windows IPv4 address shou
 
 ## Wi-Fi
 
-The Debian service split is kept unchanged:
+`channel-wifi-firmware.service` keeps the validated Channel-specific WCNSS
+firmware path: it mounts the stock modem/vendor partitions read-only, prepares
+the firmware/NV files, starts the remote processor, and loads `wcn36xx`.
 
-`channel-wifi-firmware.service` -> `channel-wifi-supplicant.service` -> `channel-wifi-dhcp-client.service`
+NetworkManager then owns `wlan0`, Wi-Fi association, DHCP, routes, and DNS.
+The firmware service is ordered before NetworkManager.
 
-and `channel-wifi-config.path` watches:
-
-`/etc/wpa_supplicant/wpa_supplicant-channel.conf`
-
-Runtime setup is the same:
+Configure Wi-Fi with:
 
 ```sh
-wpa_passphrase "<network-name>" "<password>" > /etc/wpa_supplicant/wpa_supplicant-channel.conf
-chmod 600 /etc/wpa_supplicant/wpa_supplicant-channel.conf
+nmcli dev wifi list
+nmcli dev wifi connect "<network-name>" password "<password>"
 ```
 
-The path unit starts the dependency chain when the file exists. Stock modem/vendor WCNSS firmware is mounted read-only just like on Debian.
+NetworkManager persists the connection profile for later boots. The old
+Channel-specific supplicant, DHCP-client service, config watcher, and udhcpc
+hook are not used.
 
 ## Build
 
