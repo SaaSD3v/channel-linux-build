@@ -101,9 +101,6 @@ sudo "$APK_STATIC" \
     openssl
 
 sudo chroot "$ROOTFS" /usr/sbin/update-ca-certificates
-
-cleanup_apk_dev
-trap - EXIT
 echo "::endgroup::"
 
 echo "::group::Install Channel Alpine headless configuration"
@@ -350,6 +347,11 @@ sudo chroot "$ROOTFS" /usr/sbin/sshd -t
 # qemu-aarch64-static is a host-side helper and must not ship in the target image.
 sudo rm -f "$ROOTFS/usr/bin/qemu-aarch64-static"
 echo "::endgroup::"
+
+# All target chroot operations are complete. Remove the temporary host /dev
+# bind before materializing the filesystem image.
+cleanup_apk_dev
+trap - EXIT
 
 echo "::group::Create ext4 rootfs image"
 USED_MB="$(sudo du -sm "$ROOTFS" | awk '{print $1}')"
