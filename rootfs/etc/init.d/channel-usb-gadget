@@ -5,7 +5,7 @@ description="Moto G7 Play USB RNDIS gadget for headless SSH"
 depend() {
     need localmount
     after modules mdev
-    before channel-dhcp channel-sshd
+    before dnsmasq channel-sshd
 }
 
 start() {
