@@ -1,0 +1,16 @@
+[Unit]
+Description=Moto G7 Play Wi-Fi supplicant
+Requires=channel-wifi-firmware.service
+After=channel-wifi-firmware.service
+ConditionPathExists=/etc/wpa_supplicant/wpa_supplicant-channel.conf
+Before=channel-wifi-dhcp-client.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/sbin/ip link set wlan0 up
+ExecStart=/usr/sbin/wpa_supplicant -i wlan0 -D nl80211 -c /etc/wpa_supplicant/wpa_supplicant-channel.conf
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
