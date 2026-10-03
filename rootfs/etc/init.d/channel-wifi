@@ -10,5 +10,4 @@ retry="TERM/10/KILL/5"
 depend() {
     need localmount
     after modules mdev
-    use chronyd
 }
