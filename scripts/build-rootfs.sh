@@ -8,6 +8,26 @@ KERNEL_DIR="${KERNEL_DIR:-}"
 KERNEL_MODULES_ARCHIVE="${KERNEL_MODULES_ARCHIVE:-}"
 KERNEL_CONFIG_FILE="${KERNEL_CONFIG_FILE:-}"
 KERNEL_SYSTEM_MAP_FILE="${KERNEL_SYSTEM_MAP_FILE:-}"
+WIFI_SSID="${WIFI_SSID:-}"
+WIFI_PASSWORD="${WIFI_PASSWORD:-}"
+WIFI_COUNTRY="${WIFI_COUNTRY:-}"
+WIFI_AUTOCONNECT=0
+
+if [ -n "$WIFI_SSID" ] || [ -n "$WIFI_PASSWORD" ]; then
+  if [ -z "$WIFI_SSID" ] || [ -z "$WIFI_PASSWORD" ]; then
+    echo "WIFI_SSID and WIFI_PASSWORD must both be set for Wi-Fi autoconnect" >&2
+    exit 2
+  fi
+  WIFI_AUTOCONNECT=1
+fi
+
+if [ -n "$WIFI_COUNTRY" ]; then
+  WIFI_COUNTRY="${WIFI_COUNTRY^^}"
+  if [[ ! "$WIFI_COUNTRY" =~ ^[A-Z]{2}$ ]]; then
+    echo "WIFI_COUNTRY must be a two-letter ISO country code" >&2
+    exit 2
+  fi
+fi
 
 if [ -z "$KERNEL_MODULES_ARCHIVE" ] && [ -z "$KERNEL_DIR" ]; then
   echo "set KERNEL_MODULES_ARCHIVE or KERNEL_DIR" >&2
@@ -29,13 +49,16 @@ sudo mmdebstrap \
   --components=main \
   --keyring=/usr/share/keyrings/debian-archive-keyring.gpg \
   --aptopt='Apt::Install-Recommends "false"' \
-  --include=debian-archive-keyring,systemd-sysv,openssh-server,iproute2,iputils-ping,dnsmasq,ca-certificates,kmod,udev,initramfs-tools,busybox-static,e2fsprogs,util-linux,procps,less,nano,ethtool,openssh-client \
+  --include=debian-archive-keyring,systemd-sysv,openssh-server,iproute2,iputils-ping,dnsmasq,ca-certificates,kmod,udev,initramfs-tools,busybox-static,e2fsprogs,util-linux,procps,less,nano,ethtool,openssh-client,iw,wpasupplicant,wireless-regdb,dbus,systemd-timesyncd \
   trixie "$ROOTFS" https://deb.debian.org/debian
 echo "::endgroup::"
 
 echo "::group::Install channel headless configuration"
 sudo cp -a "$REPO_ROOT/rootfs/." "$ROOTFS/"
 sudo chmod 0755 "$ROOTFS/usr/local/sbin/channel-usb-gadget"
+sudo chmod 0755 "$ROOTFS/usr/local/sbin/channel-wifi-firmware"
+sudo chmod 0755 "$ROOTFS/usr/local/sbin/channel-wifi-dhcp"
+sudo chmod 0755 "$ROOTFS/usr/local/libexec/channel-udhcpc"
 
 printf '%s\n' channel | sudo tee "$ROOTFS/etc/hostname" >/dev/null
 sudo tee "$ROOTFS/etc/hosts" >/dev/null <<'EOF'
@@ -162,12 +185,30 @@ sudo ssh-keygen -A -f "$ROOTFS"
 # listens independently from sshd's ListenAddress when explicitly enabled.
 sudo systemctl --root="$ROOTFS" disable ssh.socket 2>/dev/null || true
 sudo systemctl --root="$ROOTFS" disable dnsmasq.service 2>/dev/null || true
+# Debian's generic wpa_supplicant.service is D-Bus controlled and does not
+# configure wlan0 by itself. Channel uses the explicit interface service below.
+sudo systemctl --root="$ROOTFS" disable wpa_supplicant.service 2>/dev/null || true
+
+sudo systemctl --root="$ROOTFS" enable \
+  channel-usb-gadget.service channel-dhcp.service \
+  channel-wifi-firmware.service dbus.socket systemd-timesyncd.service
+
 if [ "$ENABLE_SSH" -eq 1 ]; then
-  sudo systemctl --root="$ROOTFS" enable channel-usb-gadget.service channel-dhcp.service ssh.service
+  sudo systemctl --root="$ROOTFS" enable ssh.service
 else
   sudo systemctl --root="$ROOTFS" disable ssh.service 2>/dev/null || true
-  sudo systemctl --root="$ROOTFS" enable channel-usb-gadget.service channel-dhcp.service
 fi
+
+if [ "$WIFI_AUTOCONNECT" -eq 1 ]; then
+  sudo systemctl --root="$ROOTFS" enable channel-wifi-supplicant.service channel-wifi-dhcp-client.service
+else
+  sudo systemctl --root="$ROOTFS" disable channel-wifi-supplicant.service channel-wifi-dhcp-client.service 2>/dev/null || true
+fi
+
+# Keep a persistent time floor. systemd-timesyncd advances this after a
+# successful sync, preventing the broken device RTC from dropping back to 1970.
+sudo install -d -m 0755 "$ROOTFS/var/lib/systemd/timesync"
+sudo touch "$ROOTFS/var/lib/systemd/timesync/clock"
 
 # This device is intentionally headless. Persist the journal so boot/USB
 # failures can be inspected by mounting the microSD on another machine.
@@ -216,6 +257,23 @@ EOF
 sudo update-binfmts --enable qemu-aarch64 || true
 if [ -x /usr/bin/qemu-aarch64-static ]; then
   sudo install -m 0755 /usr/bin/qemu-aarch64-static "$ROOTFS/usr/bin/qemu-aarch64-static"
+fi
+
+if [ "$WIFI_AUTOCONNECT" -eq 1 ]; then
+  sudo install -d -m 0755 "$ROOTFS/etc/wpa_supplicant"
+  # Never print or persist the plaintext PSK comment emitted by wpa_passphrase.
+  set +x
+  {
+    echo 'ctrl_interface=/run/wpa_supplicant'
+    echo 'update_config=0'
+    if [ -n "$WIFI_COUNTRY" ]; then
+      printf 'country=%s\n' "$WIFI_COUNTRY"
+    fi
+    printf '%s\n' "$WIFI_PASSWORD" | sudo chroot "$ROOTFS" /usr/bin/wpa_passphrase "$WIFI_SSID" | \
+      sed '/^[[:space:]]*#psk=/d'
+  } | sudo tee "$ROOTFS/etc/wpa_supplicant/wpa_supplicant-channel.conf" >/dev/null
+  sudo chmod 0600 "$ROOTFS/etc/wpa_supplicant/wpa_supplicant-channel.conf"
+  unset WIFI_PASSWORD
 fi
 
 cleanup_mounts() {
@@ -271,4 +329,7 @@ echo "::endgroup::"
   echo "usb_device_ip=172.16.42.1"
   echo "usb_dhcp_range=172.16.42.2-172.16.42.20"
   echo "ssh_auth=$SSH_AUTH_MODE"
+  echo "wifi_autoconnect=$([ "$WIFI_AUTOCONNECT" -eq 1 ] && echo enabled || echo disabled)"
+  echo "wifi_firmware=stock-modem-vendor-readonly"
+  echo "time_sync=systemd-timesyncd"
 } > "$OUT_DIR/build-info.txt"

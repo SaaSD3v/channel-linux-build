@@ -1,0 +1,14 @@
+[Unit]
+Description=Moto G7 Play Wi-Fi DHCP client
+Requires=channel-wifi-supplicant.service
+After=channel-wifi-supplicant.service
+Before=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/channel-wifi-dhcp
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
