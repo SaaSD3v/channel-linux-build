@@ -1,16 +1,6 @@
 # Channel runtime helpers
 
-## `channel-usb-gadget`
-
-This script creates the Channel configfs USB gadget used by the generated rootfs.
-
-During execution it:
-
-- waits for the Qualcomm UDC;
-- removes a previous Channel gadget instance when present;
-- creates the RNDIS function and Microsoft OS descriptors;
-- binds the gadget to the detected UDC;
-- waits for `usb0`;
-- assigns `172.16.42.1/24` to the device side of the link.
-
-The script is started by `channel-usb-gadget.service`.
+- `channel-usb-gadget` creates the configfs RNDIS gadget and assigns `172.16.42.1/24`.
+- `channel-wifi` is the OpenRC-supervised Wi-Fi manager. It waits for runtime configuration and coordinates firmware, supplicant and DHCP.
+- `channel-wifi-firmware` exposes stock modem/vendor WCNSS firmware and loads the WCN36xx path.
+- `channel-wifi-dhcp` waits for association and runs BusyBox `udhcpc`.

@@ -1,0 +1,14 @@
+#!/sbin/openrc-run
+
+description="Moto G7 Play WCN36xx Wi-Fi manager"
+command="/usr/local/sbin/channel-wifi"
+supervisor=supervise-daemon
+respawn_delay=3
+respawn_max=0
+retry="TERM/10/KILL/5"
+
+depend() {
+    need localmount
+    after modules mdev
+    use chronyd
+}

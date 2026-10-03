@@ -1,7 +1,5 @@
 # SSH configuration overlay
 
-This directory contains SSH configuration shipped with the generated rootfs.
+The Alpine rootfs runs the project-owned `channel-sshd` OpenRC service rather than the stock service. It starts only after the USB RNDIS gadget is ready.
 
-The active drop-in is under `sshd_config.d/`.
-
-The separated `rootfs` workflow can render the final authentication settings during the build according to the selected `ssh_auth` mode. The repository file provides the project baseline; the generated image contains the effective settings for that run.
+`sshd_config.d/10-channel-usb.conf` binds sshd to `172.16.42.1`. `scripts/build-rootfs.sh` rewrites its authentication directives for the selected build mode.

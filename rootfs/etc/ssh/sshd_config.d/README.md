@@ -1,9 +1,3 @@
-# sshd configuration drop-ins
+# sshd drop-ins
 
-## `10-channel-usb.conf`
-
-This file is the Channel-specific sshd drop-in.
-
-The baseline configuration binds sshd to the Channel USB network address and defines the default authentication policy used by the existing integrated build.
-
-In the separated `rootfs` workflow, `scripts/build-rootfs.sh` may rewrite this drop-in inside the generated rootfs to match the selected manual authentication mode. The repository copy remains the baseline input.
+`10-channel-usb.conf` is the baseline Alpine/OpenSSH policy. It restricts sshd to the Channel USB management address. The rootfs builder rewrites authentication settings for the selected key/password/open-root mode and validates the final target configuration with `sshd -t`.
