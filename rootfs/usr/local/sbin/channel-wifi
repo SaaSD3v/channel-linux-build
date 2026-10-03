@@ -35,7 +35,13 @@ mkdir -p /run/wpa_supplicant
 /usr/local/sbin/channel-wifi-firmware
 ip link set wlan0 up
 
-/usr/sbin/wpa_supplicant -i wlan0 -D nl80211 -c "$CONF" &
+WPA_SUPPLICANT="$(command -v wpa_supplicant || true)"
+[ -n "$WPA_SUPPLICANT" ] && [ -x "$WPA_SUPPLICANT" ] || {
+    echo "channel-wifi: wpa_supplicant binary not found" >&2
+    exit 1
+}
+
+"$WPA_SUPPLICANT" -i wlan0 -D nl80211 -c "$CONF" &
 WPA_PID=$!
 
 /usr/local/sbin/channel-wifi-dhcp &
