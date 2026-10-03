@@ -8,8 +8,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: channel-kernel-mainline-7.1
+  cancel-in-progress: true
+
 env:
   KERNEL_URL: https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git
+  MKBOOTIMG_URL: https://android.googlesource.com/platform/system/tools/mkbootimg
+  MKBOOTIMG_REF: d3b6ee4295e1491432ce3d0fcfd53631177bbef4
 
 jobs:
   kernel:
@@ -17,10 +23,16 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - name: Checkout build files
+      - name: Checkout kernel build files
         uses: actions/checkout@v4
         with:
           ref: kernel-mainline-7.1
+
+      - name: Validate kernel build scripts
+        run: |
+          set -eux
+          bash -n scripts/build-kernel.sh
+          bash -n scripts/build-bootimg.sh
 
       - name: Install kernel build dependencies
         run: |
@@ -29,9 +41,19 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             git ca-certificates make bc bison flex \
             gcc-aarch64-linux-gnu device-tree-compiler \
-            libssl-dev libelf-dev dwarves zstd
+            libssl-dev libelf-dev dwarves \
+            python3 zstd file
 
-      - name: Clone fresh channel mainline kernel
+          rm -rf aosp-mkbootimg
+          git init aosp-mkbootimg
+          git -C aosp-mkbootimg remote add origin "$MKBOOTIMG_URL"
+          git -C aosp-mkbootimg fetch --depth=1 origin "$MKBOOTIMG_REF"
+          git -C aosp-mkbootimg checkout --detach FETCH_HEAD
+          test "$(git -C aosp-mkbootimg rev-parse HEAD)" = "$MKBOOTIMG_REF"
+          python3 aosp-mkbootimg/mkbootimg.py --help >/dev/null
+          python3 aosp-mkbootimg/unpack_bootimg.py --help >/dev/null
+
+      - name: Clone fresh Channel mainline kernel
         run: |
           set -euxo pipefail
           rm -rf kernel out
@@ -44,7 +66,7 @@ jobs:
             git -C kernel log -1 --date=iso --format='%H%n%ad%n%an%n%s'
           } | tee out/source-report.txt
 
-      - name: Configure and build kernel
+      - name: Configure and build Channel kernel
         env:
           KERNEL_DIR: ${{ github.workspace }}/kernel
           OUT_DIR: ${{ github.workspace }}/out
@@ -55,39 +77,94 @@ jobs:
 
           IRIS_COMPATIBLE="$(fdtget -t s out/sdm632-motorola-channel.dtb /soc@0/remoteproc@a204000/iris compatible)"
           test "$IRIS_COMPATIBLE" = "qcom,wcn3620"
-          {
-            echo "=== Channel Wi-Fi patch ==="
-            sha256sum out/wcn3620-fix.patch
-            echo "iris_compatible=$IRIS_COMPATIBLE"
-            git -C kernel diff -- arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dts
-          } >> out/source-report.txt
 
           KREL="$(cat out/kernel-release.txt)"
           test -n "$KREL"
-          test -s "kernel/System.map"
-          cp kernel/System.map out/System.map
+          case "$KREL" in *-dirty) echo "dirty kernel release is not allowed: $KREL" >&2; exit 1;; esac
 
-          cat "kernel/arch/arm64/boot/Image.gz" "kernel/arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dtb" > out/Image.gz-dtb
+          test -s kernel/System.map
+          cp kernel/System.map out/System.map
+          cp kernel/arch/arm64/boot/Image.gz out/Image.gz
+          cat out/Image.gz out/sdm632-motorola-channel.dtb > out/Image.gz-dtb
 
           rm -rf out/modules-root
           mkdir -p out/modules-root
-          make -C kernel ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+          make -C kernel ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KERNELRELEASE="$KREL" \
             INSTALL_MOD_PATH="$GITHUB_WORKSPACE/out/modules-root" modules_install
           tar -I 'zstd -T0 -10' -cf "out/kernel-modules-$KREL.tar.zst" \
             -C out/modules-root lib/modules
           rm -rf out/modules-root
 
-          cp "kernel/arch/arm64/boot/Image.gz" out/Image.gz
-          sha256sum out/Image.gz out/Image.gz-dtb out/sdm632-motorola-channel.dtb \
-            out/kernel-modules-*.tar.zst out/wcn3620-fix.patch | tee out/SHA256SUMS
+          {
+            echo
+            echo "=== Channel Wi-Fi validation ==="
+            echo "iris_compatible=$IRIS_COMPATIBLE"
+            sha256sum out/wcn3620-fix.patch
+            git -C kernel diff -- arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dts
+          } >> out/source-report.txt
+
+      - name: Pack rootfs-independent boot image
+        env:
+          KERNEL_RELEASE: ${{ env.KERNEL_RELEASE }}
+          OUT_DIR: ${{ github.workspace }}/out
+          KERNEL_IMAGE: ${{ github.workspace }}/out/Image.gz
+          CHANNEL_DTB: ${{ github.workspace }}/out/sdm632-motorola-channel.dtb
+          MKBOOTIMG_PY: ${{ github.workspace }}/aosp-mkbootimg/mkbootimg.py
+          CHANNEL_ROOT_PARTUUID: 76dbdefa-f243-cd22-5da5-9374e6ad318b
+        run: |
+          set -euxo pipefail
+          chmod +x scripts/build-bootimg.sh
+          scripts/build-bootimg.sh
+
+          test -s out/boot-channel.img
+          test -s out/kernel-cmdline.txt
+          grep -q 'root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b' out/kernel-cmdline.txt
+          ! grep -q 'root=LABEL=' out/kernel-cmdline.txt
+
+          rm -rf /tmp/unpacked-boot
+          python3 aosp-mkbootimg/unpack_bootimg.py \
+            --boot_img out/boot-channel.img \
+            --out /tmp/unpacked-boot
+
+          test -s /tmp/unpacked-boot/kernel
+          test ! -s /tmp/unpacked-boot/ramdisk
+
+          {
+            echo
+            echo "=== rootfs-independent boot image ==="
+            printf 'cmdline='
+            cat out/kernel-cmdline.txt
+            file out/boot-channel.img
+          } >> out/source-report.txt
+
+          sha256sum \
+            out/boot-channel.img \
+            out/Image.gz \
+            out/Image.gz-dtb \
+            out/Image.gz-dtb-* \
+            out/sdm632-motorola-channel.dtb \
+            out/kernel-modules-*.tar.zst \
+            out/wcn3620-fix.patch \
+            > out/SHA256SUMS
+
+      - name: Upload boot image
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-channel-img
+          path: out/boot-channel.img
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
           name: channel-kernel-mainline-7.1
           path: |
+            out/boot-channel.img
+            out/kernel-cmdline.txt
             out/Image.gz
-            out/Image.gz-*
+            out/Image.gz-dtb
+            out/Image.gz-dtb-*
             out/sdm632-motorola-channel.dtb
             out/kernel.config-*
             out/kernel-release.txt
