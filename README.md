@@ -90,7 +90,7 @@ If the secret is not configured, the build generates an isolated Ed25519 test ke
 
 This credential artifact is retained for 1 day.
 
-The integrated workflow and the separated `rootfs` workflow now share the same SSH authentication implementation. Manual integrated runs expose the same selectable key/password/disabled modes; push builds keep the automatic key behavior.
+The integrated workflow, the separated `rootfs` workflow, and the `kernel-mainline-7.1` workflow share the same SSH authentication implementation. Manual runs expose the same selectable authentication modes; push builds keep the automatic key behavior.
 
 ## Separated rootfs build
 
@@ -98,19 +98,47 @@ The `rootfs` branch generates the Debian rootfs and matching initramfs independe
 
 It compiles a kernel internally because the rootfs needs the matching kernel release and module tree, but it publishes only the rootfs-related outputs as its main artifact.
 
-The separated rootfs workflow adds manual authentication controls that are not part of the integrated `build.yml`:
+The manual workflows expose the same SSH authentication controls:
 
-- generated key;
-- public key supplied directly in the Actions input;
-- public key supplied through `SSH_PUBLIC_KEY`;
-- generated password;
-- password supplied through `SSH_PASSWORD`;
-- supported key/password combinations;
-- SSH-disabled mode.
+- `generated-key`;
+- `public-key-input`;
+- `public-key-secret`;
+- `generated-password`;
+- `password-secret`;
+- `generated-key+generated-password`;
+- `public-key-input+password-secret`;
+- `public-key-secret+password-secret`;
+- `open-root-usb`.
 
 Generated credentials are published only when the selected mode actually creates them. Generated key/password artifacts are retained for 1 day.
 
-See the top-level README on the `rootfs` branch for the exact `ssh_auth` values, `ssh_public_key` input behavior, required secrets, and artifact names.
+### SSH authentication inputs
+
+The generated rootfs always keeps sshd bound to the USB RNDIS address:
+
+`172.16.42.1`
+
+It does not intentionally expose sshd on the Wi-Fi address.
+
+Use the following workflow inputs/secrets according to the selected mode:
+
+| `ssh_auth` | Required input/secret | Connection |
+| --- | --- | --- |
+| `generated-key` | none | download the generated Ed25519 key artifact and use `ssh -i <key> root@172.16.42.1` |
+| `public-key-input` | workflow input `ssh_public_key` | use the matching private key |
+| `public-key-secret` | repository secret `SSH_PUBLIC_KEY` | use the matching private key |
+| `generated-password` | none | download the generated password artifact and use `ssh root@172.16.42.1` |
+| `password-secret` | repository secret `SSH_PASSWORD` | use `ssh root@172.16.42.1` and enter that password |
+| `generated-key+generated-password` | none | either generated credential can be used |
+| `public-key-input+password-secret` | `ssh_public_key` input + `SSH_PASSWORD` secret | key or password |
+| `public-key-secret+password-secret` | `SSH_PUBLIC_KEY` + `SSH_PASSWORD` secrets | key or password |
+| `open-root-usb` | none | direct `ssh root@172.16.42.1`, without key or password |
+
+`open-root-usb` is intended for local bring-up and recovery. It keeps the Unix root password non-empty so the serial/local login path is not opened with a blank password; the passwordless behavior is restricted to the USB-bound sshd configuration. Any computer physically attached to the USB RNDIS interface can obtain root access while this mode is enabled.
+
+The old `disabled` choice is no longer a supported workflow mode. On a headless bring-up image, completely disabling SSH removes the primary recovery path, so it was replaced by `open-root-usb`.
+
+For push-triggered builds, `SSH_AUTH_MODE=auto` remains internal behavior: the build uses `SSH_PUBLIC_KEY` when that secret exists, otherwise it generates a temporary Ed25519 key.
 
 ## Kernel build
 
@@ -221,7 +249,7 @@ These directory READMEs complement this main project README; they are not intend
 
 The repository was reorganized so the complete build remains on `main` while rootfs, kernel, DTBO, and lk2nd can also be built independently.
 
-The selectable rootfs SSH authentication modes are now also wired into manual integrated builds; push builds retain automatic public-key behavior.
+The selectable SSH authentication modes are wired into the manual integrated, rootfs, and kernel workflows. The previous `disabled` choice was replaced by `open-root-usb`, which permits direct root SSH only on the USB RNDIS address; push builds retain automatic public-key behavior.
 
 The component workflows are also exposed from `main` as manual launchers, and the kernel launcher now mirrors the specialized branch's Wi-Fi validation and patch provenance checks.
 
