@@ -1,10 +1,9 @@
 # Rootfs `/etc` overlay
 
-This directory contains configuration files installed into `/etc` of the generated Debian rootfs.
+This directory contains device-specific configuration installed into the generated Ubuntu rootfs.
 
-Current project configuration is split between:
+- `ssh/` contains the USB-only Channel SSH policy.
+- `systemd/` contains the USB, DHCP and Wi-Fi service ordering.
+- `modprobe.d/` contains WCNSS module ordering.
 
-- `ssh/` for the Channel SSH configuration;
-- `systemd/` for the services and ordering used by the generated image.
-
-Only files maintained by this project are kept here; the rest of `/etc` comes from the Debian rootfs created during the build.
+All other files come from Ubuntu Base and Ubuntu packages during the rootfs build.
