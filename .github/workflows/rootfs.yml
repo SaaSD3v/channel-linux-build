@@ -1,12 +1,12 @@
-name: Build Debian rootfs
+name: Build rootfs
 
 on:
   push:
-    branches: [rootfs]
+    branches: [debian]
   workflow_dispatch:
     inputs:
       ssh_auth:
-        description: SSH authentication mode
+        description: SSH authentication mode (open-root-usb = direct root login on USB only)
         required: true
         type: choice
         default: generated-key
@@ -19,7 +19,7 @@ on:
           - generated-key+generated-password
           - public-key-input+password-secret
           - public-key-secret+password-secret
-          - disabled
+          - open-root-usb
       ssh_public_key:
         description: Public key to install when using a public-key-input mode
         required: false
@@ -27,6 +27,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: channel-debian-rootfs
+  cancel-in-progress: true
 
 env:
   KERNEL_URL: https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git
@@ -40,7 +44,7 @@ jobs:
       - name: Checkout rootfs build files
         uses: actions/checkout@v4
         with:
-          ref: rootfs
+          ref: debian
 
       - name: Validate existing rootfs scripts
         run: |
@@ -48,6 +52,7 @@ jobs:
           bash -n scripts/build-kernel.sh
           bash -n scripts/build-rootfs.sh
           sh -n rootfs/usr/local/sbin/channel-usb-gadget
+          sh -n rootfs/usr/local/sbin/channel-wifi-firmware
 
       - name: Install rootfs and kernel dependencies
         run: |
@@ -84,9 +89,17 @@ jobs:
           chmod +x scripts/build-kernel.sh
           scripts/build-kernel.sh
           test -s out/kernel-release.txt
+          test -s out/sdm632-motorola-channel.dtb
           test -s kernel/System.map
+          KREL="$(cat out/kernel-release.txt)"
+          test -n "$KREL"
+          test "$(fdtget -t s out/sdm632-motorola-channel.dtb /soc@0/remoteproc@a204000/iris compatible)" = "qcom,wcn3620"
+          grep -qx 'CONFIG_WCN36XX=m' "out/kernel.config-$KREL"
+          grep -qx 'CONFIG_QCOM_WCNSS_PIL=m' "out/kernel.config-$KREL"
+          grep -qx 'CONFIG_QCOM_WCNSS_CTRL=m' "out/kernel.config-$KREL"
+          grep -qx 'CONFIG_RPMSG_QCOM_SMD=y' "out/kernel.config-$KREL"
 
-      - name: Build Debian rootfs
+      - name: Build rootfs
         env:
           KERNEL_DIR: ${{ github.workspace }}/kernel
           OUT_DIR: ${{ github.workspace }}/out
@@ -103,6 +116,8 @@ jobs:
           scripts/build-rootfs.sh
 
           test -s out/debian-channel-rootfs.ext4.zst
+          grep -q '^wifi_firmware=stock-modem-vendor-readonly$' out/build-info.txt
+          grep -q '^time_sync=systemd-timesyncd$' out/build-info.txt
           sha256sum out/debian-channel-rootfs.ext4.zst \
             out/build-info.txt | tee out/SHA256SUMS.rootfs
 
