@@ -287,6 +287,10 @@ done
 # open-root-usb cannot expose the empty root password on a local/serial console.
 sudo sed -i -E '/::(respawn|askfirst):.*(a?getty)/d' "$ROOTFS/etc/inittab"
 sudo rm -f "$ROOTFS"/etc/runlevels/default/agetty.* "$ROOTFS"/etc/runlevels/default/consolefont 2>/dev/null || true
+if grep -Eq '::(respawn|askfirst):.*(a?getty)' "$ROOTFS/etc/inittab"; then
+  echo "Refusing an Alpine image with a local getty enabled" >&2
+  exit 1
+fi
 
 # Keep persistent logs for headless bring-up.
 sudo install -d -m 0755 "$ROOTFS/var/log"
