@@ -36,7 +36,7 @@ The USB gadget remains RNDIS with:
 - DHCP range: `172.16.42.2` through `172.16.42.20`;
 - sshd listening only on `172.16.42.1`.
 
-OpenRC starts the services in order: `channel-usb-gadget` → `channel-dhcp` / `channel-sshd`.
+OpenRC starts `channel-usb-gadget` first, then Alpine's packaged `dnsmasq` service and `channel-sshd`. The Windows host receives `172.16.42.2`–`172.16.42.20` by DHCP without manual IPv4 configuration.
 
 Manual builds support the existing authentication modes:
 
@@ -81,7 +81,7 @@ After DHCP succeeds, the hook restarts `chronyd` so devices whose RTC starts nea
 
 Project-owned Alpine runtime files live in `rootfs/`:
 
-- `etc/init.d/` — OpenRC services;
+- `etc/init.d/` — device-specific OpenRC services; USB DHCP itself uses Alpine's packaged `dnsmasq` service;
 - `etc/ssh/` — USB-only sshd policy;
 - `etc/chrony/` — NTP configuration;
 - `etc/modprobe.d/` — WCNSS autoload ordering;
