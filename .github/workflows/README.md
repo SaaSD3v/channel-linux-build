@@ -4,7 +4,7 @@ This branch exposes the integrated build and the manual launchers for all separa
 
 ## `build.yml`
 
-Runs the complete Channel build on `main`: kernel, modules, lk2nd, DTBO, Debian rootfs, initramfs, boot image, validation, and final artifacts.
+Runs the complete Channel build on `main`: kernel, modules, lk2nd, DTBO, Debian rootfs, rootfs-independent boot image, validation, and final artifacts.
 
 ## `rootfs.yml`
 
