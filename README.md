@@ -1,5 +1,18 @@
 # Moto G7 Play (channel) — Alpine mainline bring-up
 
+## Canonical rootfs identity
+
+All current Channel rootfs builds use one identity only:
+
+- file: `rootfs.ext4.zst`
+- ext4 label: `rootfs`
+- ext4 UUID: `89530000-6320-4000-8000-000000000001`
+
+The mainline boot image contains a small ARM64 initramfs that searches only for
+that filesystem UUID, mounts it as the real root, and executes `/sbin/init`.
+No root PARTUUID, distro-specific root label, or automatic fallback is used.
+
+
 This branch builds a headless Alpine Linux userspace for the Motorola Moto G7 Play (`channel`, Qualcomm SDM632) on the existing mainline kernel/lk2nd boot flow.
 
 ## What changed from `main`
@@ -10,8 +23,8 @@ The kernel, Channel DTB, WCN36xx fix, lk2nd, DTBO and Android boot-image layout 
 - OpenRC instead of systemd;
 - `chronyd` instead of `systemd-timesyncd`;
 - Alpine `apk` packages for OpenSSH, `wpa_supplicant`, dnsmasq, networking and utilities;
-- root filesystem label `alpine-rootfs`;
-- rootfs artifact `alpine-channel-rootfs.ext4.zst`.
+- root filesystem label `rootfs`;
+- rootfs artifact `rootfs.ext4.zst`.
 
 The rootfs bootstrap verifies the official Alpine minirootfs SHA-256 before extracting it.
 
@@ -25,7 +38,7 @@ The rootfs bootstrap verifies the official Alpine minirootfs SHA-256 before extr
 4. the Alpine rootfs with the matching kernel modules;
 5. `boot-channel.img`.
 
-The final rootfs artifact is `alpine-channel-rootfs.ext4.zst`. The shared boot image contains no initramfs and mounts the Channel root partition with `root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b rootfstype=ext4 rootwait rw`; the `alpine-rootfs` label is kept only for filesystem identification.
+The final rootfs artifact is `rootfs.ext4.zst`. The shared boot image contains a small fixed-UUID initramfs and mounts the Channel root partition with `initramfs lookup of filesystem UUID 89530000-6320-4000-8000-000000000001`; the `rootfs` label is kept only for filesystem identification.
 
 ## USB SSH
 
@@ -83,4 +96,4 @@ Project-owned Alpine runtime files live in `rootfs/`:
 
 ## Storage
 
-The rootfs is a standalone ext4 image labeled `alpine-rootfs`. This repository still does not repartition or flash the phone automatically; placement of the ext4 image remains a separate device-side step.
+The rootfs is a standalone ext4 image labeled `rootfs`. This repository still does not repartition or flash the phone automatically; placement of the ext4 image remains a separate device-side step.
