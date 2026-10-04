@@ -1,5 +1,18 @@
 # Moto G7 Play (channel) — Debian mainline bring-up
 
+## Canonical rootfs identity
+
+All current Channel rootfs builds use one identity only:
+
+- file: `rootfs.ext4.zst`
+- ext4 label: `rootfs`
+- ext4 UUID: `89530000-6320-4000-8000-000000000001`
+
+The mainline boot image contains a small ARM64 initramfs that searches only for
+that filesystem UUID, mounts it as the real root, and executes `/sbin/init`.
+No root PARTUUID, distro-specific root label, or automatic fallback is used.
+
+
 Build repository for the Motorola Moto G7 Play, codename `channel`, based on Qualcomm SDM632.
 
 The repository keeps the complete integrated build on `main` and separate component builds for the rootfs, kernel, DTBO, and lk2nd. The separated workflows make it possible to rebuild only one component without removing the complete build flow that has already been used for full-device testing.
@@ -45,7 +58,7 @@ A single run performs the complete build sequence:
 6. builds lk2nd for `lk2nd-msm8953`;
 7. builds the minimal Channel DTBO;
 8. builds the Debian rootfs with the matching kernel modules;
-9. packs the rootfs-independent `boot-channel.img`;
+9. packs the fixed-rootfs `boot-channel.img`;
 10. performs the final static checks;
 11. publishes the build artifacts and, when generated, the temporary SSH test key.
 
@@ -59,13 +72,13 @@ The main artifact is retained for 14 days.
 
 It contains:
 
-- `boot-channel.img` — rootfs-independent boot image packed from the kernel/DTB with no initramfs;
+- `boot-channel.img` — fixed-rootfs boot image packed from the kernel/DTB with a small fixed-UUID initramfs;
 - `lk2nd-msm8953.img` — lk2nd image compiled for the target used by Channel;
 - `dtbo-motorola-channel.img` — minimal DTBO generated for the lk2nd Channel flow;
 - `Image.gz` — compressed ARM64 kernel image;
 - `Image.gz-dtb` — kernel image concatenated with the compiled Channel DTB;
 - `*.dtb` — compiled Channel device tree;
-- `debian-channel-rootfs.ext4.zst` — compressed Debian ext4 rootfs image;
+- `rootfs.ext4.zst` — compressed Debian ext4 rootfs image;
 - `kernel-modules-*.tar.zst` — modules matching the built kernel;
 - `kernel.config` — final integrated kernel configuration;
 - `System.map` — symbol map for the built kernel;
@@ -155,7 +168,7 @@ The fragment also pins the validated WCNSS path explicitly: WCN36XX, WCNSS PIL/c
 
 It is merged on top of the ARM64 defconfig and carries the storage, USB gadget, RNDIS, networking, and bring-up options required by the current build. Initramfs support remains enabled in the kernel for compatibility, but the normal Channel boot path no longer uses one.
 
-The integrated and separated kernel builds use the same validated Channel Wi-Fi patch. The separated kernel build publishes the kernel image, Channel DTB, combined kernel+DTB image, matching modules, configuration, release string, source revision, `System.map`, the applied patch, hashes, and the same rootfs-independent `boot-channel.img` used by the integrated build.
+The integrated and separated kernel builds use the same validated Channel Wi-Fi patch. The separated kernel build publishes the kernel image, Channel DTB, combined kernel+DTB image, matching modules, configuration, release string, source revision, `System.map`, the applied patch, hashes, and the same fixed-rootfs `boot-channel.img` used by the integrated build.
 
 ## lk2nd
 
@@ -193,9 +206,9 @@ The generated rootfs is Debian 13 (Trixie) ARM64.
 
 The build creates an ext4 image with label:
 
-`debian-rootfs`
+`rootfs`
 
-The integrated boot command line mounts the fixed Channel root partition by GPT PARTUUID `76dbdefa-f243-cd22-5da5-9374e6ad318b` and waits for storage before mounting it.
+The integrated boot command line mounts the fixed Channel root partition by GPT filesystem UUID `89530000-6320-4000-8000-000000000001` and waits for storage before mounting it.
 
 The rootfs build installs the matching kernel modules, applies the repository overlay under `rootfs/`, validates the target sshd configuration, and then creates the compressed ext4 image. It does not generate an initramfs.
 
@@ -245,9 +258,9 @@ Each of those directories now contains its own README describing the files maint
 
 ## Storage and boot model
 
-The generated rootfs is a standalone ext4 image labeled `debian-rootfs`.
+The generated rootfs is a standalone ext4 image labeled `rootfs`.
 
-The filesystem label is retained for identification, but the boot image does not depend on it. `scripts/build-bootimg.sh` uses `root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b rootfstype=ext4 rootwait rw` and contains no initramfs, so the same boot image can start Debian, Alpine, or Ubuntu when flashed to the same root partition with matching kernel modules.
+The filesystem label is retained for identification, but the boot image does not depend on it. `scripts/build-bootimg.sh` uses `initramfs lookup of filesystem UUID 89530000-6320-4000-8000-000000000001` and contains a small fixed-UUID initramfs, so the same boot image can start Debian, Alpine, or Ubuntu when flashed to the same root partition with matching kernel modules.
 
 The repository does not perform an automatic device repartitioning step. Storage placement and flashing remain separate from the build itself.
 
