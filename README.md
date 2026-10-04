@@ -1,5 +1,18 @@
 # Moto G7 Play (channel) — Debian rootfs build
 
+## Canonical rootfs identity
+
+All current Channel rootfs builds use one identity only:
+
+- file: `rootfs.ext4.zst`
+- ext4 label: `rootfs`
+- ext4 UUID: `89530000-6320-4000-8000-000000000001`
+
+The mainline boot image contains a small ARM64 initramfs that searches only for
+that filesystem UUID, mounts it as the real root, and executes `/sbin/init`.
+No root PARTUUID, distro-specific root label, or automatic fallback is used.
+
+
 The `debian` branch contains the separated Debian rootfs workflow.
 
 Workflow: `.github/workflows/rootfs.yml`
@@ -25,7 +38,7 @@ Retained for 14 days.
 
 It contains:
 
-- `debian-channel-rootfs.ext4.zst` — final compressed ext4 rootfs image;
+- `rootfs.ext4.zst` — final compressed ext4 rootfs image;
 - `build-info.txt` — rootfs build metadata, including the selected SSH authentication mode;
 - `SHA256SUMS.rootfs` — hashes for the generated rootfs outputs.
 
