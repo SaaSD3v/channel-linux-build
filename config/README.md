@@ -8,7 +8,7 @@ This fragment is merged on top of the kernel's ARM64 `defconfig` during Channel 
 
 It keeps the options required by the current build flow, including:
 
-- initramfs support;
+- initrd support retained for kernel compatibility; generated Channel boot images themselves contain no initramfs;
 - ext4 and MMC/SDHCI storage support;
 - Qualcomm DWC3 USB gadget support;
 - configfs and RNDIS support;

@@ -70,7 +70,7 @@ The main artifact is retained for 14 days.
 
 It contains:
 
-- `boot-channel.img` — fixed-rootfs boot image packed from the kernel/DTB with a small fixed-UUID initramfs;
+- `boot-channel.img` — direct-root boot image packed from the kernel/DTB with no ramdisk; it locates Android `userdata` by its fixed GPT PARTUUID;
 - `lk2nd-msm8953.img` — lk2nd image compiled for the target used by Channel;
 - `dtbo-motorola-channel.img` — minimal DTBO generated for the lk2nd Channel flow;
 - `Image.gz` — compressed ARM64 kernel image;
