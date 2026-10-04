@@ -8,9 +8,7 @@ All current Channel rootfs builds use one identity only:
 - ext4 label: `rootfs`
 - ext4 UUID: `89530000-6320-4000-8000-000000000001`
 
-The mainline boot image contains a small ARM64 initramfs that searches only for
-that filesystem UUID, mounts it as the real root, and executes `/sbin/init`.
-No root PARTUUID, distro-specific root label, or automatic fallback is used.
+The mainline boot image contains no initramfs. It boots the existing Android `userdata` partition directly with `root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b rootfstype=ext4 rootwait rw`. The ext4 UUID remains fixed inside the distro images, but the GPT PARTUUID of `userdata` is the boot locator.
 
 
 Build repository for the Motorola Moto G7 Play, codename `channel`, based on Qualcomm SDM632.
@@ -156,9 +154,9 @@ For push-triggered builds, `SSH_AUTH_MODE=auto` remains internal behavior: the b
 
 The project kernel source is:
 
-`https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git`
+`https://github.com/SaaSD3v/linux.git (branch `msm8953/latest`)`
 
-The integrated `main` workflow clones the explicit `channel` kernel branch and uses the same `scripts/build-kernel.sh` helper as the component builds. That helper applies the validated `wcn3620-fix.patch`; the resulting DTB is rejected unless the WCNSS IRIS compatible is `qcom,wcn3620`, matching the tested 19.2 MHz configuration.
+The integrated `main` workflow clones `SaaSD3v/linux` at `msm8953/latest` and uses the same `scripts/build-kernel.sh` helper as the component builds. The WCN3620 fix is already part of that kernel tree; no local patch is applied. The resulting DTB is still rejected unless the WCNSS IRIS compatible is `qcom,wcn3620`.
 
 The project-specific configuration fragment is:
 
@@ -168,7 +166,7 @@ The fragment also pins the validated WCNSS path explicitly: WCN36XX, WCNSS PIL/c
 
 It is merged on top of the ARM64 defconfig and carries the storage, USB gadget, RNDIS, networking, and bring-up options required by the current build. Initramfs support remains enabled in the kernel for compatibility, but the normal Channel boot path no longer uses one.
 
-The integrated and separated kernel builds use the same validated Channel Wi-Fi patch. The separated kernel build publishes the kernel image, Channel DTB, combined kernel+DTB image, matching modules, configuration, release string, source revision, `System.map`, the applied patch, hashes, and the same fixed-rootfs `boot-channel.img` used by the integrated build.
+The integrated and separated kernel builds use the same validated Channel kernel tree without a local Wi-Fi patch. The separated kernel build publishes the kernel image, Channel DTB, combined kernel+DTB image, matching modules, configuration, release string, source revision, `System.map`, the applied patch, hashes, and the same fixed-rootfs `boot-channel.img` used by the integrated build.
 
 ## lk2nd
 
@@ -260,7 +258,7 @@ Each of those directories now contains its own README describing the files maint
 
 The generated rootfs is a standalone ext4 image labeled `rootfs`.
 
-The filesystem label is retained for identification, but the boot image does not depend on it. `scripts/build-bootimg.sh` uses `initramfs lookup of filesystem UUID 89530000-6320-4000-8000-000000000001` and contains a small fixed-UUID initramfs, so the same boot image can start Debian, Alpine, or Ubuntu when flashed to the same root partition with matching kernel modules.
+The filesystem label is retained for identification, but the boot image does not depend on it. `scripts/build-bootimg.sh` points the kernel directly at the existing Android `userdata` GPT partition by PARTUUID, so Debian, Alpine, or Ubuntu can be flashed into that same partition with matching kernel modules without an initramfs.
 
 The repository does not perform an automatic device repartitioning step. Storage placement and flashing remain separate from the build itself.
 
