@@ -106,7 +106,7 @@ jobs:
       - name: Upload rootfs artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: channel-alpine-rootfs
+          name: rootfs
           path: |
             out/rootfs.ext4.zst
             out/build-info.txt
