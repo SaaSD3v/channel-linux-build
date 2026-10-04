@@ -4,6 +4,8 @@ set -euo pipefail
 : "${KERNEL_RELEASE:?set KERNEL_RELEASE}"
 : "${OUT_DIR:?set OUT_DIR}"
 
+CHANNEL_ROOT_UUID="${CHANNEL_ROOT_UUID:-89530000-6320-4000-8000-000000000001}"
+
 KERNEL_DIR="${KERNEL_DIR:-}"
 KERNEL_MODULES_ARCHIVE="${KERNEL_MODULES_ARCHIVE:-}"
 KERNEL_CONFIG_FILE="${KERNEL_CONFIG_FILE:-}"
@@ -122,7 +124,7 @@ sudo tee "$ROOTFS/etc/hosts" >/dev/null <<'EOF'
 EOF
 
 sudo tee "$ROOTFS/etc/fstab" >/dev/null <<'EOF'
-LABEL=alpine-rootfs / ext4 rw,noatime 0 1
+UUID=89530000-6320-4000-8000-000000000001 / ext4 rw,noatime 0 1
 EOF
 
 # Keep a stable per-image identifier for the USB serial fallback.
@@ -358,10 +360,12 @@ USED_MB="$(sudo du -sm "$ROOTFS" | awk '{print $1}')"
 IMAGE_MB=$((USED_MB + 512))
 if [ "$IMAGE_MB" -lt 1024 ]; then IMAGE_MB=1024; fi
 
-ROOTFS_IMG="$OUT_DIR/alpine-channel-rootfs.ext4"
+ROOTFS_IMG="$OUT_DIR/rootfs.ext4"
 truncate -s "${IMAGE_MB}M" "$ROOTFS_IMG"
-sudo mkfs.ext4 -F -m 0 -L alpine-rootfs -d "$ROOTFS" "$ROOTFS_IMG"
+sudo mkfs.ext4 -F -m 0 -L rootfs -U "$CHANNEL_ROOT_UUID" -d "$ROOTFS" "$ROOTFS_IMG"
 sudo e2fsck -fn "$ROOTFS_IMG"
+test "$(blkid -p -o value -s UUID "$ROOTFS_IMG")" = "$CHANNEL_ROOT_UUID"
+test "$(blkid -p -o value -s LABEL "$ROOTFS_IMG")" = "rootfs"
 zstd -T0 -10 -f "$ROOTFS_IMG" -o "$ROOTFS_IMG.zst"
 rm -f "$ROOTFS_IMG"
 echo "::endgroup::"
@@ -372,7 +376,8 @@ echo "::endgroup::"
   echo "alpine_branch=$ALPINE_BRANCH"
   echo "apk_tools_static_version=$APK_TOOLS_STATIC_VERSION"
   echo "kernel_release=$KREL"
-  echo "rootfs_label=alpine-rootfs"
+  echo "rootfs_label=rootfs"
+  echo "rootfs_uuid=$CHANNEL_ROOT_UUID"
   echo "init=openrc"
   echo "usb_device_ip=172.16.42.1"
   echo "usb_dhcp_range=172.16.42.2-172.16.42.20"
