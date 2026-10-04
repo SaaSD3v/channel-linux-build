@@ -14,7 +14,7 @@ concurrency:
 
 env:
   KERNEL_URL: https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git
-  MKBOOTIMG_URL: https://android.googlesource.com/platform/system/tools/mkbootimg
+  MKBOOTIMG_URL: https://github.com/LineageOS/android_system_tools_mkbootimg.git
   MKBOOTIMG_REF: d3b6ee4295e1491432ce3d0fcfd53631177bbef4
   BUSYBOX_VERSION: "1.38.0"
   CHANNEL_ROOT_UUID: 89530000-6320-4000-8000-000000000001
@@ -41,7 +41,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             git ca-certificates make bc bison flex \
-            gcc-aarch64-linux-gnu device-tree-compiler \
+            gcc-aarch64-linux-gnu libc6-dev-arm64-cross device-tree-compiler \
             libssl-dev libelf-dev dwarves \
             python3 zstd file cpio gzip bzip2
 
