@@ -4,6 +4,8 @@ set -euo pipefail
 : "${KERNEL_RELEASE:?set KERNEL_RELEASE}"
 : "${OUT_DIR:?set OUT_DIR}"
 
+CHANNEL_ROOT_UUID="${CHANNEL_ROOT_UUID:-89530000-6320-4000-8000-000000000001}"
+
 KERNEL_DIR="${KERNEL_DIR:-}"
 KERNEL_MODULES_ARCHIVE="${KERNEL_MODULES_ARCHIVE:-}"
 KERNEL_CONFIG_FILE="${KERNEL_CONFIG_FILE:-}"
@@ -43,6 +45,10 @@ sudo tee "$ROOTFS/etc/hosts" >/dev/null <<'EOF'
 127.0.1.1 channel
 ::1 localhost ip6-localhost ip6-loopback
 EOF
+
+sudo tee "$ROOTFS/etc/fstab" >/dev/null <<'FSTAB'
+UUID=89530000-6320-4000-8000-000000000001 / ext4 rw,noatime 0 1
+FSTAB
 
 SSH_AUTH_MODE="${SSH_AUTH_MODE:-auto}"
 SSH_PUBLIC_KEY_INPUT="${SSH_PUBLIC_KEY_INPUT:-}"
@@ -269,10 +275,12 @@ USED_MB="$(sudo du -sm "$ROOTFS" | awk '{print $1}')"
 IMAGE_MB=$((USED_MB + 700))
 if [ "$IMAGE_MB" -lt 1536 ]; then IMAGE_MB=1536; fi
 
-ROOTFS_IMG="$OUT_DIR/debian-channel-rootfs.ext4"
+ROOTFS_IMG="$OUT_DIR/rootfs.ext4"
 truncate -s "${IMAGE_MB}M" "$ROOTFS_IMG"
-sudo mkfs.ext4 -F -m 0 -L debian-rootfs -d "$ROOTFS" "$ROOTFS_IMG"
+sudo mkfs.ext4 -F -m 0 -L rootfs -U "$CHANNEL_ROOT_UUID" -d "$ROOTFS" "$ROOTFS_IMG"
 sudo e2fsck -fn "$ROOTFS_IMG"
+test "$(blkid -p -o value -s UUID "$ROOTFS_IMG")" = "$CHANNEL_ROOT_UUID"
+test "$(blkid -p -o value -s LABEL "$ROOTFS_IMG")" = "rootfs"
 zstd -T0 -10 -f "$ROOTFS_IMG" -o "$ROOTFS_IMG.zst"
 rm -f "$ROOTFS_IMG"
 echo "::endgroup::"
@@ -280,7 +288,8 @@ echo "::endgroup::"
 {
   echo "debian_suite=trixie"
   echo "kernel_release=$KREL"
-  echo "rootfs_label=debian-rootfs"
+  echo "rootfs_label=rootfs"
+  echo "rootfs_uuid=$CHANNEL_ROOT_UUID"
   echo "usb_device_ip=172.16.42.1"
   echo "usb_dhcp_range=172.16.42.2-172.16.42.20"
   echo "ssh_auth=$SSH_AUTH_MODE"
