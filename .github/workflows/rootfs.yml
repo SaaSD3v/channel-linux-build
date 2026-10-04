@@ -33,7 +33,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  KERNEL_URL: https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git
+  KERNEL_URL: https://github.com/SaaSD3v/linux.git
+  KERNEL_REF: msm8953/latest
 
 jobs:
   rootfs:
@@ -83,7 +84,7 @@ jobs:
           set -euxo pipefail
           rm -rf kernel out .work
           mkdir -p out
-          git clone --depth=1 --branch channel "$KERNEL_URL" kernel
+          git clone --depth=1 --branch "$KERNEL_REF" "$KERNEL_URL" kernel
           chmod +x scripts/build-kernel.sh
           scripts/build-kernel.sh
           test -s out/kernel-release.txt

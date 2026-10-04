@@ -10,19 +10,7 @@ JOBS="${JOBS:-$(nproc)}"
 
 cd "$KERNEL_DIR"
 
-echo "::group::Apply Channel Wi-Fi device-tree fix"
-WIFI_PATCH="$REPO_ROOT/wcn3620-fix.patch"
-if git apply --check "$WIFI_PATCH" 2>/dev/null; then
-  git apply "$WIFI_PATCH"
-elif git apply --reverse --check "$WIFI_PATCH"; then
-  echo "Channel Wi-Fi patch is already applied."
-else
-  echo "Channel Wi-Fi patch does not match the kernel tree; refusing an unpatched build." >&2
-  exit 1
-fi
 mkdir -p "$OUT_DIR"
-cp "$WIFI_PATCH" "$OUT_DIR/wcn3620-fix.patch"
-echo "::endgroup::"
 
 echo "::group::Configure kernel"
 make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
@@ -89,15 +77,17 @@ fi
 echo "::endgroup::"
 
 echo "::group::Build kernel, DTBs and modules"
-RAW_KREL="$(make -s ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kernelrelease)"
-KREL="${RAW_KREL%-dirty}"
+KREL="$(make -s ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kernelrelease)"
 if [ -z "$KREL" ]; then
   echo "Failed to resolve kernel release" >&2
   exit 1
 fi
-if [ "$RAW_KREL" != "$KREL" ]; then
-  echo "Normalizing patched-tree release: $RAW_KREL -> $KREL"
-fi
+case "$KREL" in
+  *-dirty)
+    echo "Refusing dirty kernel release: $KREL" >&2
+    exit 1
+    ;;
+esac
 make -j"$JOBS" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KERNELRELEASE="$KREL" Image.gz dtbs modules
 echo "::endgroup::"
 
@@ -109,12 +99,6 @@ if [ ! -s "$DTB" ]; then
   exit 1
 fi
 
-case "$KREL" in
-  *-dirty)
-    echo "Refusing dirty kernel release: $KREL" >&2
-    exit 1
-    ;;
-esac
 mkdir -p "$OUT_DIR"
 cp arch/arm64/boot/Image.gz "$OUT_DIR/Image.gz-$KREL"
 cp "$DTB" "$OUT_DIR/sdm632-motorola-channel.dtb"
