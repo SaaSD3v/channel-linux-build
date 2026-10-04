@@ -1,0 +1,225 @@
+name: Build Channel kernel from GitHub
+
+on:
+  push:
+    branches: [kernel-github]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: channel-kernel-github
+  cancel-in-progress: true
+
+env:
+  KERNEL_REPOSITORY: SaaSD3v/linux
+  KERNEL_REF: msm8953/latest
+  CHANNEL_DTB: arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dtb
+  MKBOOTIMG_URL: https://android.googlesource.com/platform/system/tools/mkbootimg
+  MKBOOTIMG_REF: d3b6ee4295e1491432ce3d0fcfd53631177bbef4
+  CHANNEL_ROOT_PARTUUID: 76dbdefa-f243-cd22-5da5-9374e6ad318b
+
+jobs:
+  kernel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout Channel kernel tree
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.KERNEL_REPOSITORY }}
+          ref: ${{ env.KERNEL_REF }}
+          path: kernel
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison clang device-tree-compiler dwarves flex \
+            git gzip file gcc-aarch64-linux-gnu kmod libelf-dev libssl-dev lld llvm make python3 zstd
+
+      - name: Fetch pinned AOSP mkbootimg
+        run: |
+          set -euxo pipefail
+          rm -rf aosp-mkbootimg
+          git init aosp-mkbootimg
+          git -C aosp-mkbootimg remote add origin "$MKBOOTIMG_URL"
+          git -C aosp-mkbootimg fetch --depth=1 origin "$MKBOOTIMG_REF"
+          git -C aosp-mkbootimg checkout --detach FETCH_HEAD
+          test "$(git -C aosp-mkbootimg rev-parse HEAD)" = "$MKBOOTIMG_REF"
+          python3 aosp-mkbootimg/mkbootimg.py --help >/dev/null
+          python3 aosp-mkbootimg/unpack_bootimg.py --help >/dev/null
+
+      - name: Record kernel source
+        run: |
+          set -euxo pipefail
+          mkdir -p out
+          {
+            echo "repository=${KERNEL_REPOSITORY}"
+            echo "ref=${KERNEL_REF}"
+            echo "commit=$(git -C kernel rev-parse HEAD)"
+            git -C kernel log -1 --date=iso --format='date=%ad%nauthor=%an%nsubject=%s'
+          } | tee out/source-report.txt
+
+      - name: Configure Channel kernel
+        working-directory: kernel
+        run: |
+          set -euxo pipefail
+
+          make ARCH=arm64 LLVM=1 defconfig
+          scripts/kconfig/merge_config.sh -m .config \
+            arch/arm64/configs/msm8953.config \
+            arch/arm64/configs/motorola-channel.config
+          make ARCH=arm64 LLVM=1 olddefconfig
+
+          # The kernel may support initrd/initramfs, but this build must not
+          # embed a distro-specific initramfs into the kernel image.
+          if grep -Eq '^CONFIG_INITRAMFS_SOURCE="[^"]+"' .config; then
+            echo "Embedded initramfs is not allowed in the kernel-only build" >&2
+            grep '^CONFIG_INITRAMFS_SOURCE=' .config >&2
+            exit 1
+          fi
+
+          # Keep the validated Channel USB/RNDIS and WCNSS paths intact.
+          grep -qx 'CONFIG_BLK_DEV_INITRD=y' .config
+          grep -qx 'CONFIG_RD_GZIP=y' .config
+          grep -qx 'CONFIG_USB_DWC3_QCOM=y' .config
+          grep -qx 'CONFIG_USB_CONFIGFS=y' .config
+          grep -qx 'CONFIG_USB_CONFIGFS_RNDIS=y' .config
+          grep -qx 'CONFIG_WCN36XX=m' .config
+          grep -qx 'CONFIG_QCOM_WCNSS_PIL=m' .config
+          grep -qx 'CONFIG_QCOM_WCNSS_CTRL=m' .config
+
+      - name: Build kernel, DTB and modules
+        working-directory: kernel
+        run: |
+          set -euxo pipefail
+          make -j"$(nproc)" ARCH=arm64 LLVM=1 Image.gz dtbs modules
+
+          test -s arch/arm64/boot/Image.gz
+          test -s "$CHANNEL_DTB"
+
+          IRIS_COMPATIBLE="$(fdtget -t s "$CHANNEL_DTB" /soc@0/remoteproc@a204000/iris compatible)"
+          test "$IRIS_COMPATIBLE" = "qcom,wcn3620"
+
+      - name: Collect kernel artifacts
+        run: |
+          set -euxo pipefail
+
+          mkdir -p out/modules-root
+
+          KREL="$(make -s -C kernel ARCH=arm64 LLVM=1 kernelrelease)"
+          test -n "$KREL"
+          case "$KREL" in
+            *-dirty)
+              echo "Dirty kernel release is not allowed: $KREL" >&2
+              exit 1
+              ;;
+          esac
+
+          cp kernel/arch/arm64/boot/Image.gz out/Image.gz
+          cp "kernel/$CHANNEL_DTB" out/sdm632-motorola-channel.dtb
+          cp kernel/.config "out/kernel.config-$KREL"
+          cp kernel/System.map out/System.map
+
+          make -C kernel ARCH=arm64 LLVM=1 \
+            INSTALL_MOD_PATH="$GITHUB_WORKSPACE/out/modules-root" \
+            modules_install
+
+          tar -I 'zstd -T0 -10' -cf "out/kernel-modules-$KREL.tar.zst" \
+            -C out/modules-root lib/modules
+          rm -rf out/modules-root
+
+          printf '%s\n' "$KREL" > out/kernel-release.txt
+          git -C kernel rev-parse HEAD > out/kernel-git-revision.txt
+
+          {
+            echo
+            echo "iris_compatible=$(fdtget -t s out/sdm632-motorola-channel.dtb /soc@0/remoteproc@a204000/iris compatible)"
+            echo "kernel_release=$KREL"
+            echo "rootfs_embedded=no"
+          } >> out/source-report.txt
+
+          sha256sum \
+            out/Image.gz \
+            out/sdm632-motorola-channel.dtb \
+            "out/kernel.config-$KREL" \
+            "out/kernel-modules-$KREL.tar.zst" \
+            out/System.map \
+            > out/SHA256SUMS
+
+      - name: Pack direct-root boot image
+        run: |
+          set -euxo pipefail
+
+          cat out/Image.gz out/sdm632-motorola-channel.dtb > out/Image.gz-dtb
+
+          CMDLINE="console=ttyMSM0,115200n8 console=tty0 root=PARTUUID=$CHANNEL_ROOT_PARTUUID rootfstype=ext4 rootwait rw loglevel=7 ignore_loglevel"
+
+          python3 aosp-mkbootimg/mkbootimg.py \
+            --header_version 0 \
+            --kernel out/Image.gz-dtb \
+            --cmdline "$CMDLINE" \
+            --base 0x80000000 \
+            --kernel_offset 0x00008000 \
+            --ramdisk_offset 0x01000000 \
+            --second_offset 0x00f00000 \
+            --tags_offset 0x00000100 \
+            --pagesize 2048 \
+            --output out/boot-channel.img
+
+          printf '%s\n' "$CMDLINE" > out/kernel-cmdline.txt
+
+          test -s out/boot-channel.img
+          BOOT_SIZE="$(stat -c %s out/boot-channel.img)"
+          test "$BOOT_SIZE" -le $((48 * 1024 * 1024))
+
+          rm -rf /tmp/unpacked-boot
+          python3 aosp-mkbootimg/unpack_bootimg.py \
+            --boot_img out/boot-channel.img \
+            --out /tmp/unpacked-boot
+
+          test -s /tmp/unpacked-boot/kernel
+          test ! -s /tmp/unpacked-boot/ramdisk
+          grep -Fq "root=PARTUUID=$CHANNEL_ROOT_PARTUUID" out/kernel-cmdline.txt
+          grep -Fq 'rootfstype=ext4' out/kernel-cmdline.txt
+          grep -Fq 'rootwait' out/kernel-cmdline.txt
+          ! grep -Fq 'rdinit=/init' out/kernel-cmdline.txt
+
+          {
+            echo
+            echo "boot_image=boot-channel.img"
+            echo "boot_image_bytes=$BOOT_SIZE"
+            echo "ramdisk=none"
+            echo "rootfs_embedded=no"
+          } >> out/source-report.txt
+
+          sha256sum \
+            out/boot-channel.img \
+            out/Image.gz-dtb \
+            out/kernel-cmdline.txt \
+            >> out/SHA256SUMS
+
+      - name: Upload Channel kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: channel-kernel-github
+          path: |
+            out/boot-channel.img
+            out/kernel-cmdline.txt
+            out/Image.gz
+            out/Image.gz-dtb
+            out/sdm632-motorola-channel.dtb
+            out/kernel.config-*
+            out/kernel-modules-*.tar.zst
+            out/kernel-release.txt
+            out/kernel-git-revision.txt
+            out/System.map
+            out/source-report.txt
+            out/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
