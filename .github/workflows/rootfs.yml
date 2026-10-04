@@ -22,9 +22,14 @@ on:
         description: Public key to install when using a public-key-input mode
         required: false
         type: string
+      kernel_run_id:
+        description: Optional kernel-mainline-7.1 run ID; empty uses the latest live artifact
+        required: false
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 env:
   KERNEL_URL: https://github.com/SaaSD3v/linux.git
@@ -65,7 +70,87 @@ jobs:
           sudo update-binfmts --enable qemu-aarch64
           /usr/bin/qemu-aarch64-static --version
 
-      - name: Build fresh kernel dependency for rootfs
+      - name: Find reusable kernel artifact
+        id: kernel_run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_RUN_ID: ${{ inputs.kernel_run_id }}
+        run: |
+          set -euxo pipefail
+
+          artifact_for_run() {
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$1/artifacts" \
+              --jq '.artifacts[] | select(.expired == false and .name == "channel-kernel-mainline-7.1") | .id' \
+              | head -n1
+          }
+
+          RUN_ID=""
+          if [ -n "$REQUESTED_RUN_ID" ]; then
+            CONCLUSION="$(gh run view "$REQUESTED_RUN_ID" --repo "$GITHUB_REPOSITORY" --json conclusion --jq '.conclusion')"
+            test "$CONCLUSION" = success
+            ARTIFACT_ID="$(artifact_for_run "$REQUESTED_RUN_ID")"
+            if [ -z "$ARTIFACT_ID" ]; then
+              echo "Requested run $REQUESTED_RUN_ID has no live channel-kernel-mainline-7.1 artifact." >&2
+              exit 1
+            fi
+            RUN_ID="$REQUESTED_RUN_ID"
+          else
+            while IFS= read -r CANDIDATE; do
+              [ -n "$CANDIDATE" ] || continue
+              if [ -n "$(artifact_for_run "$CANDIDATE")" ]; then
+                RUN_ID="$CANDIDATE"
+                break
+              fi
+            done < <(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow kernel-mainline-7.1.yml \
+              --status success \
+              --limit 10 \
+              --json databaseId \
+              --jq '.[].databaseId')
+          fi
+
+          if [ -n "$RUN_ID" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No live reusable kernel artifact; a temporary kernel will be built for this rootfs run."
+          fi
+
+      - name: Download reusable kernel artifact
+        if: steps.kernel_run.outputs.found == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.kernel_run.outputs.run_id }}
+          github-token: ${{ github.token }}
+          name: channel-kernel-mainline-7.1
+          path: kernel-artifact
+
+      - name: Select reusable kernel artifact
+        if: steps.kernel_run.outputs.found == 'true'
+        run: |
+          set -euxo pipefail
+          KERNEL_ARTIFACT="$GITHUB_WORKSPACE/kernel-artifact"
+          KREL="$(cat "$KERNEL_ARTIFACT/kernel-release.txt")"
+          MODULES_ARCHIVE="$(find "$KERNEL_ARTIFACT" -maxdepth 1 -type f -name 'kernel-modules-*.tar.zst' -print -quit)"
+          KERNEL_CONFIG_FILE="$(find "$KERNEL_ARTIFACT" -maxdepth 1 -type f -name 'kernel.config-*' -print -quit)"
+
+          test -n "$KREL"
+          test -s "$MODULES_ARCHIVE"
+          test -s "$KERNEL_CONFIG_FILE"
+          test -s "$KERNEL_ARTIFACT/System.map"
+          test -s "$KERNEL_ARTIFACT/sdm632-motorola-channel.dtb"
+          test "$(fdtget -t s "$KERNEL_ARTIFACT/sdm632-motorola-channel.dtb" /soc@0/remoteproc@a204000/iris compatible)" = "qcom,wcn3620"
+
+          echo "KERNEL_RELEASE=$KREL" >> "$GITHUB_ENV"
+          echo "KERNEL_MODULES_ARCHIVE=$MODULES_ARCHIVE" >> "$GITHUB_ENV"
+          echo "KERNEL_CONFIG_FILE=$KERNEL_CONFIG_FILE" >> "$GITHUB_ENV"
+          echo "KERNEL_SYSTEM_MAP_FILE=$KERNEL_ARTIFACT/System.map" >> "$GITHUB_ENV"
+
+      - name: Build temporary kernel dependency for rootfs
+        if: steps.kernel_run.outputs.found != 'true'
         env:
           KERNEL_DIR: ${{ github.workspace }}/kernel
           OUT_DIR: ${{ github.workspace }}/out
@@ -78,6 +163,7 @@ jobs:
           scripts/build-kernel.sh
           test -s out/kernel-release.txt
           test -s kernel/System.map
+          echo "Temporary kernel is local to this rootfs run and will not be uploaded."
 
       - name: Build Alpine rootfs
         env:
@@ -92,7 +178,6 @@ jobs:
         run: |
           set -euxo pipefail
           chmod +x scripts/build-rootfs.sh
-          unset KERNEL_MODULES_ARCHIVE
           scripts/build-rootfs.sh
 
           test -s out/rootfs.ext4.zst
