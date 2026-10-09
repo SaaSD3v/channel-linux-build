@@ -1,4 +1,4 @@
-name: Build Moto G7 Play mainline Debian
+name: For test only
 
 on:
   push:
