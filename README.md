@@ -1,76 +1,54 @@
-# Moto G7 Play (channel) — kernel mainline 7.1 build
+# Moto G7 Play (channel) — mainline kernel component
 
-This branch contains the separated kernel workflow.
+This branch builds the **kernel-side** artifacts independently of any userspace
+rootfs. Workflow: `.github/workflows/kernel-mainline-7.1.yml`.
 
-Workflow: `.github/workflows/kernel-mainline-7.1.yml`
+## Actual kernel source
 
-Primary artifact: `channel-kernel-mainline-7.1`
+- GitHub: `https://github.com/SaaSD3v/linux.git`
+- Ref: `msm8953/latest`
+- Device: Motorola Moto G7 Play (`channel`, SDM632)
+- Device tree: `arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dts`
+- Compiler: AArch64 cross-GCC, as used by `scripts/build-kernel.sh`
 
-## Source and build
+The kernel tree already contains the validated `qcom,wcn3620` WCNSS IRIS
+compatible. No external `wcn3620-fix.patch` is applied in the current workflow.
+The compiled DTB is checked for this compatible. WCN36xx, WCNSS PIL/control,
+Qualcomm messaging and USB/RNDIS kernel config values are validated after
+`olddefconfig`.
 
-The workflow clones:
+## Boot model
 
-`https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git`
+The generated `boot-channel.img` includes the compressed ARM64 kernel and
+Channel DTB. **It has no ramdisk or initramfs.** The cmdline includes:
 
-using the `channel` branch, then builds the Channel kernel with the project configuration and helper script.
-
-The kernel, DTB, modules, configuration, symbol map, and rootfs-independent `boot-channel.img` are produced together so the artifact represents one consistent kernel-side build.
-
-### Channel Wi-Fi device-tree fix
-
-`scripts/build-kernel.sh` applies `wcn3620-fix.patch` to the cloned kernel
-before configuring and compiling it. The patch changes `&wcnss_iris` in
-`arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dts` from
-`qcom,wcn3660b` to `qcom,wcn3620`, selecting the 19.2 MHz IRIS XO
-configuration required by the tested device. It also corrects the adjacent
-comment. This resolved `qcom-wcnss-pil: start timed out (-110)`; validation
-on the device included WCNSS reaching `running`, scanning, WPA2 association,
-and successful IP traffic over `wlan0`.
-
-The helper accepts an already-applied patch and stops on a conflicting
-kernel tree. The workflow verifies the compatible in the compiled DTB
-and records the patch checksum and source diff in `source-report.txt`.
-
-The project config also pins the validated WCNSS kernel path explicitly
-(WCN36XX, WCNSS PIL/control, Qualcomm SMD/SMEM/SMP2P/SMSM, cfg80211 and
-mac80211), and the shared helper verifies the expected built-in/module
-states after `olddefconfig`.
-
-To apply the same fix manually, run from the kernel source directory:
-
-```sh
-git apply --check /path/to/channel-pmos-build/wcn3620-fix.patch
-git apply /path/to/channel-pmos-build/wcn3620-fix.patch
+```text
+root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b rootfstype=ext4 rootwait rw
 ```
 
-## `channel-kernel-mainline-7.1`
+This PARTUUID identifies the GPT partition `userdata`. It is **not** the ext4
+filesystem UUID `89530000-6320-4000-8000-000000000001`, which the rootfs
+builders use to identify the filesystem inside that partition.
 
-Retained for 14 days.
+## Artifacts
 
-It contains:
+A successful workflow publishes:
 
-- `boot-channel.img` — rootfs-independent Android boot image with kernel + Channel DTB and no initramfs;
-- `kernel-cmdline.txt` — boot command line using the fixed Channel root-partition PARTUUID;
-- `Image.gz` — compressed ARM64 kernel image;
-- `Image.gz-dtb` — kernel image concatenated with the Channel DTB;
-- `sdm632-motorola-channel.dtb` — compiled Channel DTB;
-- `kernel.config-*` — final kernel configuration produced by the helper build;
-- `kernel-release.txt` — exact kernel release;
-- `kernel-git-revision.txt` — exact kernel source commit;
-- `kernel-modules-*.tar.zst` — modules matching that release;
-- `System.map` — kernel symbol map;
-- `source-report.txt` — source URL/ref/commit details captured by the workflow;
-- `wcn3620-fix.patch` — Channel Wi-Fi device-tree fix used for this build;
-- `SHA256SUMS` — hashes for the main generated outputs.
+- `boot-channel-img`: just the boot image.
+- `channel-kernel-mainline-7.1`: `boot-channel.img`,
+  `kernel-cmdline.txt`, `Image.gz`, `Image.gz-dtb`,
+  `sdm632-motorola-channel.dtb`, `kernel.config-*`,
+  `kernel-release.txt`, `kernel-git-revision.txt`,
+  `kernel-modules-*.tar.zst`, `System.map`, `source-report.txt`,
+  and `SHA256SUMS`.
 
-## Manual run
+Each artifact is retained for 14 days. The kernel modules archive must match
+the exact kernel release used by a particular rootfs.
 
-Use **Actions → Build kernel mainline 7.1 → Run workflow** on `main`.
+## Usage
 
-The launcher checks out `kernel-mainline-7.1` before building.
-
-## Changes made in this branch
-
-This branch builds the kernel side independently from every distro. It does not build a rootfs, initramfs, lk2nd, DTBO, SSH configuration, or userspace credentials.
-
-The generated `boot-channel.img` mounts `PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b` directly and therefore can be reused with Debian, Alpine, or Ubuntu on that root partition as long as the rootfs contains the matching kernel modules.
+The manual workflow is exposed on `main`; it builds the kernel from GitHub
+using `msm8953/latest`. This component build has no SSH credentials or
+distribution-specific rootfs. Debian/Ubuntu/Alpine rootfs workflows use their
+own optional `reuse_kernel` flag, which is **off by default**. Only when the
+flag is selected can they reuse a saved kernel artifact from this workflow.
