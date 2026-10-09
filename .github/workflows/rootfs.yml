@@ -24,6 +24,11 @@ on:
         description: Public key to install when using a public-key-input mode
         required: false
         type: string
+      reuse_kernel:
+        description: Reuse prebuilt kernel artifact (unchecked compiles latest)
+        required: false
+        type: boolean
+        default: false
       kernel_run_id:
         description: Optional kernel-mainline-7.1 run ID; empty uses the latest live artifact
         required: false
@@ -86,8 +91,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_RUN_ID: ${{ inputs.kernel_run_id }}
+          REUSE_KERNEL: ${{ inputs.reuse_kernel }}
         run: |
           set -euxo pipefail
+          if [ "$REUSE_KERNEL" != "true" ]; then
+            if [ -n "$REQUESTED_RUN_ID" ]; then
+              echo "::error::kernel_run_id requires reuse_kernel=true."
+              exit 1
+            fi
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "Kernel reuse disabled; compiling latest kernel source."
+            exit 0
+          fi
 
           artifact_for_run() {
             gh api "repos/$GITHUB_REPOSITORY/actions/runs/$1/artifacts" \
