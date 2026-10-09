@@ -34,7 +34,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  KERNEL_URL: https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git
+  KERNEL_URL: https://github.com/SaaSD3v/linux.git
+  KERNEL_REF: msm8953/latest
   LK2ND_URL: https://github.com/msm8916-mainline/lk2nd.git
   LK2ND_REF: "23.1"
   DTBO_URL: https://github.com/barni2000/dtbo-lk2nd.git
@@ -102,12 +103,11 @@ jobs:
         id: kernel-key
         run: |
           set -euxo pipefail
-          KERNEL_SOURCE_SHA="$(git ls-remote "$KERNEL_URL" refs/heads/channel | awk 'NR==1 {print $1}')"
+          KERNEL_SOURCE_SHA="$(git ls-remote "$KERNEL_URL" "refs/heads/$KERNEL_REF" | awk 'NR==1 {print $1}')"
           test -n "$KERNEL_SOURCE_SHA"
           CONFIG_SHA="$(sha256sum config/channel-mainline.config | awk '{print $1}')"
-          WIFI_PATCH_SHA="$(sha256sum wcn3620-fix.patch | awk '{print $1}')"
           KERNEL_HELPER_SHA="$(sha256sum scripts/build-kernel.sh | awk '{print $1}')"
-          CACHE_KEY="channel-kernel-v3-${RUNNER_OS}-$KERNEL_SOURCE_SHA-$CONFIG_SHA-$WIFI_PATCH_SHA-$KERNEL_HELPER_SHA"
+          CACHE_KEY="channel-kernel-v4-${RUNNER_OS}-$KERNEL_SOURCE_SHA-$CONFIG_SHA-$KERNEL_HELPER_SHA"
           echo "source_sha=$KERNEL_SOURCE_SHA" >> "$GITHUB_OUTPUT"
           echo "cache_key=$CACHE_KEY" >> "$GITHUB_OUTPUT"
 
@@ -125,13 +125,13 @@ jobs:
           rm -rf kernel out
           mkdir -p out
 
-          git clone --depth=1 --branch channel "$KERNEL_URL" kernel
+          git clone --depth=1 --branch "$KERNEL_REF" "$KERNEL_URL" kernel
           CHANNEL_DTS="kernel/arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dts"
           test -s "$CHANNEL_DTS"
 
           {
             echo "=== kernel source ==="
-            echo "selected_branch=channel"
+            echo "selected_branch=$KERNEL_REF"
             echo "selected_channel_dts=arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dts"
             git -C kernel remote -v
             git -C kernel rev-parse HEAD
@@ -175,12 +175,11 @@ jobs:
             echo
             echo "=== Channel Wi-Fi validation ==="
             echo "iris_compatible=$IRIS_COMPATIBLE"
-            sha256sum wcn3620-fix.patch
             git -C kernel diff -- arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dts
             echo
             echo "=== built kernel ==="
             echo "kernel_release=$KREL"
-            sha256sum out/Image.gz "$DTB" out/wcn3620-fix.patch
+            sha256sum out/Image.gz "$DTB"
             echo
             echo "=== selected WCNSS config ==="
             grep -E '^CONFIG_(WLAN|WLAN_VENDOR_ATH|CFG80211|MAC80211|WCN36XX|QCOM_WCNSS_PIL|QCOM_WCNSS_CTRL|RPMSG_QCOM_SMD|QCOM_SMEM|QCOM_SMP2P|QCOM_SMSM)=' out/kernel.config | sort
@@ -191,7 +190,7 @@ jobs:
           cp out/Image.gz out/Image.gz-dtb out/sdm632-motorola-channel.dtb \
             out/kernel.config out/System.map out/kernel-release.txt \
             out/kernel-git-revision.txt out/kernel-modules-*.tar.zst \
-            out/source-report.txt out/wcn3620-fix.patch .cache/channel-kernel/
+            out/source-report.txt .cache/channel-kernel/
 
       - name: Materialize restored kernel checkpoint
         if: steps.kernel-cache.outputs.cache-hit == 'true'
@@ -203,7 +202,6 @@ jobs:
           test -s out/Image.gz-dtb
           test -s out/kernel.config
           test -s out/kernel-release.txt
-          test -s out/wcn3620-fix.patch
           CHANNEL_DTB_FILE="$(find out -maxdepth 1 -type f -name '*channel*.dtb' -print -quit)"
           test -n "$CHANNEL_DTB_FILE"
           test "$(fdtget -t s "$CHANNEL_DTB_FILE" /soc@0/remoteproc@a204000/iris compatible)" = "qcom,wcn3620"
@@ -241,7 +239,6 @@ jobs:
             out/kernel-git-revision.txt
             out/kernel-modules-*.tar.zst
             out/source-report.txt
-            out/wcn3620-fix.patch
           if-no-files-found: error
           retention-days: 14
 
@@ -373,7 +370,6 @@ jobs:
           grep -Fqx "rootfs_label=rootfs" out/build-info.txt
           grep -Fqx "rootfs_uuid=89530000-6320-4000-8000-000000000001" out/build-info.txt
           test -s out/source-report.txt
-          test -s out/wcn3620-fix.patch
 
           # Rootfs generation validates sshd itself. Confirm the selected mode
           # and fixed USB management address made it into the build metadata.
@@ -418,7 +414,6 @@ jobs:
             out/System.map
             out/kernel-release.txt
             out/kernel-modules-*.tar.zst
-            out/wcn3620-fix.patch
             out/SHA256SUMS*
           if-no-files-found: warn
           retention-days: 14

@@ -13,7 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  KERNEL_URL: https://gitlab.com/moto8953-revived/channel/Mainline/channel-linux.git
+  KERNEL_URL: https://github.com/SaaSD3v/linux.git
+  KERNEL_REF: msm8953/latest
   MKBOOTIMG_URL: https://android.googlesource.com/platform/system/tools/mkbootimg
   MKBOOTIMG_REF: d3b6ee4295e1491432ce3d0fcfd53631177bbef4
   BUSYBOX_VERSION: "1.38.0"
@@ -59,7 +60,7 @@ jobs:
           set -euxo pipefail
           rm -rf kernel out
           mkdir -p out
-          git clone --depth=1 --branch channel "$KERNEL_URL" kernel
+          git clone --depth=1 --branch "$KERNEL_REF" "$KERNEL_URL" kernel
           {
             echo "=== kernel source ==="
             git -C kernel remote -v
@@ -100,7 +101,6 @@ jobs:
             echo
             echo "=== Channel Wi-Fi validation ==="
             echo "iris_compatible=$IRIS_COMPATIBLE"
-            sha256sum out/wcn3620-fix.patch
             git -C kernel diff -- arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dts
           } >> out/source-report.txt
 
@@ -188,7 +188,6 @@ jobs:
             out/Image.gz-dtb-* \
             out/sdm632-motorola-channel.dtb \
             out/kernel-modules-*.tar.zst \
-            out/wcn3620-fix.patch \
             > out/SHA256SUMS
 
       - name: Upload boot image
@@ -218,7 +217,6 @@ jobs:
             out/kernel-modules-*.tar.zst
             out/System.map
             out/source-report.txt
-            out/wcn3620-fix.patch
             out/SHA256SUMS
           if-no-files-found: error
           retention-days: 14
