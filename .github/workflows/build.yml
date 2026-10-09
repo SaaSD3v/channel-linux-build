@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      reuse_kernel:
+        description: Reuse commit-matched kernel cache instead of recompiling
+        required: false
+        type: boolean
+        default: false
       ssh_auth:
         description: SSH authentication mode (open-root-usb = direct root login on USB only)
         required: true
@@ -21,9 +26,21 @@ on:
           - public-key-secret+password-secret
           - open-root-usb
       ssh_public_key:
-        description: Public key to install when using a public-key-input mode
+        description: Only for public-key-input modes; leave blank for all others
         required: false
         type: string
+
+  workflow_call:
+    inputs:
+      ssh_auth:
+        type: string
+        default: generated-key
+      ssh_public_key:
+        type: string
+        default: ''
+      reuse_kernel:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -49,6 +66,28 @@ jobs:
     timeout-minutes: 180
 
     steps:
+      - name: Validate build option combinations
+        env:
+          SSH_AUTH_MODE: ${{ inputs.ssh_auth }}
+          SSH_PUBLIC_KEY_INPUT: ${{ inputs.ssh_public_key }}
+          REUSE_KERNEL: ${{ inputs.reuse_kernel }}
+        run: |
+          set -euo pipefail
+          case "$SSH_AUTH_MODE" in
+            public-key-input|public-key-input+password-secret)
+              if [ -z "$SSH_PUBLIC_KEY_INPUT" ]; then
+                echo "::error::This SSH mode requires ssh_public_key."
+                exit 1
+              fi
+              ;;
+            *)
+              if [ -n "$SSH_PUBLIC_KEY_INPUT" ]; then
+                echo "::error::ssh_public_key is only valid for public-key-input SSH modes."
+                exit 1
+              fi
+              ;;
+          esac
+
       - name: Checkout build repository
         uses: actions/checkout@v4
 
@@ -118,6 +157,7 @@ jobs:
           echo "cache_key=$CACHE_KEY" >> "$GITHUB_OUTPUT"
 
       - name: Restore reusable kernel checkpoint
+        if: ${{ inputs.reuse_kernel == true }}
         id: kernel-cache
         uses: actions/cache/restore@v4
         with:
@@ -134,6 +174,7 @@ jobs:
           git clone --depth=1 --branch "$KERNEL_REF" "$KERNEL_URL" kernel
           CHANNEL_DTS="kernel/arch/arm64/boot/dts/qcom/sdm632-motorola-channel.dts"
           test -s "$CHANNEL_DTS"
+          test "$(git -C kernel rev-parse HEAD)" = "${{ steps.kernel-key.outputs.source_sha }}"
 
           {
             echo "=== kernel source ==="
@@ -207,7 +248,7 @@ jobs:
           test -s out/Image.gz-dtb
           test -s out/kernel.config
           test -s out/kernel-release.txt
-          test -s
+          test -s out/kernel-git-revision.txt
           CHANNEL_DTB_FILE="$(find out -maxdepth 1 -type f -name '*channel*.dtb' -print -quit)"
           test -n "$CHANNEL_DTB_FILE"
           test "$(fdtget -t s "$CHANNEL_DTB_FILE" /soc@0/remoteproc@a204000/iris compatible)" = "qcom,wcn3620"
@@ -223,7 +264,7 @@ jobs:
           echo "KERNEL_RELEASE=$KREL" >> "$GITHUB_ENV"
 
       - name: Save reusable kernel checkpoint
-        if: steps.kernel-cache.outputs.cache-hit != 'true'
+        if: ${{ inputs.reuse_kernel == true && steps.kernel-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: .cache/channel-kernel
@@ -276,7 +317,7 @@ jobs:
           OUT_DIR: ${{ github.workspace }}/out
           WORK_DIR: ${{ github.workspace }}/.work
           KERNEL_RELEASE: ${{ env.KERNEL_RELEASE }}
-          SSH_AUTH_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.ssh_auth || 'auto' }}
+          SSH_AUTH_MODE: ${{ inputs.ssh_auth || 'auto' }}
           SSH_PUBLIC_KEY_INPUT: ${{ inputs.ssh_public_key }}
           SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}

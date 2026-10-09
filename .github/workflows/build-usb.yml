@@ -1,0 +1,21 @@
+name: Build complete Channel image (USB open root)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reuse_kernel:
+        description: Reuse existing kernel instead of compiling current source
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      ssh_auth: open-root-usb
+      reuse_kernel: ${{ inputs.reuse_kernel }}
+    secrets: inherit
