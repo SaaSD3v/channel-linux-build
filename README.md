@@ -19,11 +19,11 @@ No Ubuntu kernel or bootloader package is used. The rootfs receives the Channel 
 
 The generated filesystem is:
 
-`ubuntu-channel-rootfs.ext4.zst`
+`rootfs.ext4.zst`
 
 with filesystem label:
 
-`ubuntu-rootfs`
+`rootfs`
 
 ## USB SSH
 
@@ -64,4 +64,15 @@ The default boot cmdline uses:
 
 `root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b rootfstype=ext4 rootwait rw`
 
-The boot image contains no initramfs; the `ubuntu-rootfs` label remains for filesystem identification only. SSH authentication modes from the Debian branch are preserved, including `open-root-usb` for bring-up.
+The boot image contains no initramfs; the `rootfs` label remains for filesystem identification only. SSH authentication modes from the Debian branch are preserved, including `open-root-usb` for bring-up.
+
+## GitHub Actions launchers
+
+Kernel reuse is **off by default**: a normal rootfs run compiles the current
+`SaaSD3v/linux:msm8953/latest`. Select `reuse_kernel` to use a published
+kernel artifact; `kernel_run_id` is only accepted when reuse is enabled.
+
+For `open-root-usb`, choose the dedicated `Build Ubuntu rootfs (USB open root)` workflow exposed on the `main`
+branch. It shows only a reuse checkbox, not SSH key/password fields.
+The regular SSH workflow no longer lists `open-root-usb` as an option.
+GitHub Actions cannot hide workflow_dispatch fields dynamically.
