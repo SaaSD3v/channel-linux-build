@@ -40,7 +40,28 @@ The repository is organized so the complete build remains available while each m
 | `dtbo` | Minimal Channel DTBO | `Build channel DTBO` | `channel-dtbo` |
 | `lk2nd` | lk2nd MSM8953 image | `Build lk2nd MSM8953` | `channel-lk2nd-msm8953` |
 
-The component workflow files are also exposed on the default `main` branch so GitHub Actions shows their manual **Run workflow** controls. Those manual launchers check out the corresponding component branch before building.
+The component workflow files are also exposed on the default `main` branch so GitHub Actions shows their manual **Run workflow** controls. Each rootfs launcher explicitly checks out the corresponding distro branch; `main` is not used as the userspace source.
+
+## Run workflow: kernel reuse and SSH interface
+
+The default behavior of rootfs builds is to compile the latest kernel from
+`SaaSD3v/linux:msm8953/latest`. To reuse a published kernel artifact, check
+`reuse_kernel`. The optional `kernel_run_id` is only valid with reuse enabled;
+if blank, the latest live successful artifact is selected. The kernel commit
+used for artifact reuse appears in the build log. The full integrated build
+also offers `reuse_kernel` (off by default), but its cache is keyed by source
+commit, build config and helper hash.
+
+For direct USB root login without a key/password, choose one of the dedicated
+`Build ... (USB open root)` workflows. These launchers have **only the optional
+reuse checkbox**, so unrelated SSH fields are not displayed. For authenticated
+SSH, use the standard distro or integrated workflows; their public-key field is
+valid only for `public-key-input` modes. GitHub's native `workflow_dispatch`
+form cannot hide fields dynamically, so separate workflows are necessary.
+
+The default `main` branch exposes the integrated Debian, Debian rootfs,
+Ubuntu rootfs and Alpine rootfs launchers. Rootfs build scripts and overlays
+still come from the individual `debian`, `ubuntu` and `alpine` branches.
 
 ## Complete integrated build on `main`
 
@@ -50,7 +71,7 @@ A single run performs the complete build sequence:
 
 1. validates the repository build scripts;
 2. installs the complete build dependency set;
-3. resolves or restores the reusable kernel checkpoint;
+3. resolves the source revision and compiles the latest kernel by default (optional commit-matched cache reuse);
 4. discovers the kernel source branch that contains the Channel DTS;
 5. configures and builds the kernel, DTBs, and modules;
 6. builds lk2nd for `lk2nd-msm8953`;
@@ -106,7 +127,7 @@ SSH authentication belongs only to workflows that generate a userspace rootfs. T
 
 The `debian` branch generates the Debian rootfs with the matching kernel modules independently.
 
-It compiles a kernel internally because the rootfs needs the matching kernel release and module tree, but it publishes only the rootfs-related outputs as its main artifact.
+The rootfs workflow compiles the current kernel by default to provide matching modules. With `reuse_kernel` checked, it can reuse a previously published kernel artifact instead. Only rootfs-related outputs are published.
 
 The manual workflows expose the same SSH authentication controls:
 
@@ -117,8 +138,9 @@ The manual workflows expose the same SSH authentication controls:
 - `password-secret`;
 - `generated-key+generated-password`;
 - `public-key-input+password-secret`;
-- `public-key-secret+password-secret`;
-- `open-root-usb`.
+- `public-key-secret+password-secret`.
+
+For `open-root-usb`, use the **dedicated USB open root workflow** rather than the SSH authentication selector.
 
 Generated credentials are published only when the selected mode actually creates them. Generated key/password artifacts are retained for 1 day.
 
