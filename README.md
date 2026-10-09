@@ -188,7 +188,7 @@ The fragment also pins the validated WCNSS path explicitly: WCN36XX, WCNSS PIL/c
 
 It is merged on top of the ARM64 defconfig and carries the storage, USB gadget, RNDIS, networking, and bring-up options required by the current build. Initramfs support remains enabled in the kernel for compatibility, but the normal Channel boot path no longer uses one.
 
-The integrated and separated kernel builds use the same validated Channel kernel tree without a local Wi-Fi patch. The separated kernel build publishes the kernel image, Channel DTB, combined kernel+DTB image, matching modules, configuration, release string, source revision, `System.map`, the applied patch, hashes, and the same fixed-rootfs `boot-channel.img` used by the integrated build.
+The integrated and separated kernel builds use the same validated Channel kernel tree without a local Wi-Fi patch. The separated kernel build publishes the kernel image, Channel DTB, combined kernel+DTB image, matching modules, configuration, release string, source revision, `System.map`, hashes, and the same direct-root `boot-channel.img` used by the integrated build.
 
 ## lk2nd
 
