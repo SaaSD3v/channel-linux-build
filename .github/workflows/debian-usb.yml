@@ -1,0 +1,28 @@
+name: Build Debian USB open root
+
+on:
+  workflow_dispatch:
+    inputs:
+      reuse_kernel:
+        description: Reuse prebuilt or cached kernel (unchecked builds fresh)
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Start existing Debian workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_KERNEL: ${{ inputs.reuse_kernel }}
+        run: |
+          set -euo pipefail
+          gh workflow run rootfs.yml --repo "$GITHUB_REPOSITORY" --ref debian \
+            -f ssh_auth=open-root-usb -f "reuse_kernel=$REUSE_KERNEL"
+          echo "Dispatched Debian with USB open root."
