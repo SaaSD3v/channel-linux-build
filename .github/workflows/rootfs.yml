@@ -19,13 +19,33 @@ on:
           - public-key-secret+password-secret
           - open-root-usb
       ssh_public_key:
-        description: Public key to install when using a public-key-input mode
+        description: Only for public-key-input modes; leave blank for all others
         required: false
         type: string
+      reuse_kernel:
+        description: Reuse an existing kernel artifact instead of compiling latest source
+        required: false
+        type: boolean
+        default: false
       kernel_run_id:
-        description: Optional kernel-mainline-7.1 run ID; empty uses the latest live artifact
+        description: Only if reuse_kernel checked; blank selects latest successful artifact
         required: false
         type: string
+
+  workflow_call:
+    inputs:
+      ssh_auth:
+        type: string
+        default: generated-key
+      ssh_public_key:
+        type: string
+        default: ''
+      reuse_kernel:
+        type: boolean
+        default: false
+      kernel_run_id:
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -41,6 +61,39 @@ jobs:
     timeout-minutes: 180
 
     steps:
+      - name: Validate build option combinations
+        env:
+          SSH_AUTH_MODE: ${{ inputs.ssh_auth }}
+          SSH_PUBLIC_KEY_INPUT: ${{ inputs.ssh_public_key }}
+          REUSE_KERNEL: ${{ inputs.reuse_kernel }}
+          REQUESTED_RUN_ID: ${{ inputs.kernel_run_id }}
+        run: |
+          set -euo pipefail
+          case "$SSH_AUTH_MODE" in
+            public-key-input|public-key-input+password-secret)
+              if [ -z "$SSH_PUBLIC_KEY_INPUT" ]; then
+                echo "::error::This SSH mode requires ssh_public_key."
+                exit 1
+              fi
+              ;;
+            *)
+              if [ -n "$SSH_PUBLIC_KEY_INPUT" ]; then
+                echo "::error::ssh_public_key is only valid for public-key-input SSH modes."
+                exit 1
+              fi
+              ;;
+          esac
+          if [ -n "$REQUESTED_RUN_ID" ]; then
+            if [ "$REUSE_KERNEL" != "true" ]; then
+              echo "::error::kernel_run_id requires reuse_kernel=true."
+              exit 1
+            fi
+            if ! [[ "$REQUESTED_RUN_ID" =~ ^[0-9]+$ ]]; then
+              echo "::error::kernel_run_id must be a numeric GitHub Actions run ID."
+              exit 1
+            fi
+          fi
+
       - name: Checkout rootfs build files
         uses: actions/checkout@v4
         with:
@@ -73,8 +126,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_RUN_ID: ${{ inputs.kernel_run_id }}
+          REUSE_KERNEL: ${{ inputs.reuse_kernel }}
         run: |
           set -euxo pipefail
+
+          if [ "$REUSE_KERNEL" != "true" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "Kernel reuse disabled; building latest $KERNEL_REF from $KERNEL_URL."
+            exit 0
+          fi
 
           artifact_for_run() {
             gh api "repos/$GITHUB_REPOSITORY/actions/runs/$1/artifacts" \
@@ -131,6 +191,94 @@ jobs:
         run: |
           set -euxo pipefail
           KERNEL_ARTIFACT="$GITHUB_WORKSPACE/kernel-artifact"
+          test -s "$KERNEL_ARTIFACT/kernel-git-revision.txt"
+          grep -Eq '^[a-f0-9]{40}
+          MODULES_ARCHIVE="$(find "$KERNEL_ARTIFACT" -maxdepth 1 -type f -name 'kernel-modules-*.tar.zst' -print -quit)"
+          KERNEL_CONFIG_FILE="$(find "$KERNEL_ARTIFACT" -maxdepth 1 -type f -name 'kernel.config-*' -print -quit)"
+
+          test -n "$KREL"
+          test -s "$MODULES_ARCHIVE"
+          test -s "$KERNEL_CONFIG_FILE"
+          test -s "$KERNEL_ARTIFACT/System.map"
+          test -s "$KERNEL_ARTIFACT/sdm632-motorola-channel.dtb"
+          test "$(fdtget -t s "$KERNEL_ARTIFACT/sdm632-motorola-channel.dtb" /soc@0/remoteproc@a204000/iris compatible)" = "qcom,wcn3620"
+
+          echo "KERNEL_RELEASE=$KREL" >> "$GITHUB_ENV"
+          echo "KERNEL_MODULES_ARCHIVE=$MODULES_ARCHIVE" >> "$GITHUB_ENV"
+          echo "KERNEL_CONFIG_FILE=$KERNEL_CONFIG_FILE" >> "$GITHUB_ENV"
+          echo "KERNEL_SYSTEM_MAP_FILE=$KERNEL_ARTIFACT/System.map" >> "$GITHUB_ENV"
+
+      - name: Build temporary kernel dependency for rootfs
+        if: steps.kernel_run.outputs.found != 'true'
+        env:
+          KERNEL_DIR: ${{ github.workspace }}/kernel
+          OUT_DIR: ${{ github.workspace }}/out
+        run: |
+          set -euxo pipefail
+          rm -rf kernel out .work
+          mkdir -p out
+          git clone --depth=1 --branch "$KERNEL_REF" "$KERNEL_URL" kernel
+          chmod +x scripts/build-kernel.sh
+          scripts/build-kernel.sh
+          test -s out/kernel-release.txt
+          test -s kernel/System.map
+          echo "Temporary kernel is local to this rootfs run and will not be uploaded."
+
+      - name: Build Ubuntu minimal rootfs
+        env:
+          KERNEL_DIR: ${{ github.workspace }}/kernel
+          OUT_DIR: ${{ github.workspace }}/out
+          WORK_DIR: ${{ github.workspace }}/.work
+          KERNEL_RELEASE: ${{ env.KERNEL_RELEASE }}
+          SSH_AUTH_MODE: ${{ inputs.ssh_auth || 'auto' }}
+          SSH_PUBLIC_KEY_INPUT: ${{ inputs.ssh_public_key }}
+          SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+        run: |
+          set -euxo pipefail
+          chmod +x scripts/build-rootfs.sh
+          scripts/build-rootfs.sh
+
+          test -s out/rootfs.ext4.zst
+          grep -q '^rootfs_label=rootfs$' out/build-info.txt
+          grep -q '^rootfs_uuid=89530000-6320-4000-8000-000000000001$' out/build-info.txt
+          grep -q '^distribution=ubuntu$' out/build-info.txt
+          grep -q '^ubuntu_version=26.04.1$' out/build-info.txt
+          sha256sum out/rootfs.ext4.zst \
+            out/build-info.txt | tee out/SHA256SUMS.rootfs
+
+      - name: Upload rootfs artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rootfs
+          path: |
+            out/rootfs.ext4.zst
+            out/build-info.txt
+            out/SHA256SUMS.rootfs
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload generated SSH test key
+        if: always() && hashFiles('out/channel_test_ed25519') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: channel-rootfs-ssh-test-key
+          path: |
+            out/channel_test_ed25519
+            out/channel_test_ed25519.pub
+          if-no-files-found: ignore
+          retention-days: 1
+
+      - name: Upload generated SSH password
+        if: always() && hashFiles('out/channel_ssh_password.txt') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: channel-rootfs-ssh-password
+          path: out/channel_ssh_password.txt
+          if-no-files-found: ignore
+          retention-days: 1
+ "$KERNEL_ARTIFACT/kernel-git-revision.txt"
+          echo "::notice::Reusing explicitly selected kernel commit $(cat "$KERNEL_ARTIFACT/kernel-git-revision.txt")"
           KREL="$(cat "$KERNEL_ARTIFACT/kernel-release.txt")"
           MODULES_ARCHIVE="$(find "$KERNEL_ARTIFACT" -maxdepth 1 -type f -name 'kernel-modules-*.tar.zst' -print -quit)"
           KERNEL_CONFIG_FILE="$(find "$KERNEL_ARTIFACT" -maxdepth 1 -type f -name 'kernel.config-*' -print -quit)"
@@ -169,7 +317,7 @@ jobs:
           OUT_DIR: ${{ github.workspace }}/out
           WORK_DIR: ${{ github.workspace }}/.work
           KERNEL_RELEASE: ${{ env.KERNEL_RELEASE }}
-          SSH_AUTH_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.ssh_auth || 'auto' }}
+          SSH_AUTH_MODE: ${{ inputs.ssh_auth || 'auto' }}
           SSH_PUBLIC_KEY_INPUT: ${{ inputs.ssh_public_key }}
           SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
