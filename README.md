@@ -8,9 +8,10 @@ All current Channel rootfs builds use one identity only:
 - ext4 label: `rootfs`
 - ext4 UUID: `89530000-6320-4000-8000-000000000001`
 
-The mainline boot image contains a small ARM64 initramfs that searches only for
-that filesystem UUID, mounts it as the real root, and executes `/sbin/init`.
-No root PARTUUID, distro-specific root label, or automatic fallback is used.
+The mainline boot image has **no initramfs**. It mounts Android `userdata`
+directly with `root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b`
+`rootfstype=ext4 rootwait rw`. The ext4 UUID identifies the filesystem; it
+is not the GPT PARTUUID used to locate the root partition.
 
 
 The `debian` branch contains the separated Debian rootfs workflow.
@@ -21,7 +22,7 @@ Primary artifact: `channel-debian-rootfs`
 
 ## What the workflow builds
 
-The run compiles a fresh kernel dependency first because the generated rootfs needs a matching kernel release and module tree.
+By default the run compiles a fresh kernel dependency so the rootfs contains matching modules. Enable `reuse_kernel` to reuse an existing kernel artifact.
 
 That kernel build is an internal dependency of this workflow. The published artifact remains focused on the rootfs and does not include or generate an initramfs.
 
@@ -130,8 +131,19 @@ The workflow was then extended with:
 
 ## Kernel consistency
 
-The internal kernel dependency uses the same validated Channel Wi-Fi path as the main and kernel component builds. The shared helper applies `wcn3620-fix.patch`, the compiled DTB must report `qcom,wcn3620` for the WCNSS IRIS node, and the required WCNSS kernel options are verified before the rootfs is generated.
+The internal kernel dependency uses the validated Channel Wi-Fi path. The WCN3620 compatible is already in `SaaSD3v/linux`; the compiled DTB must report `qcom,wcn3620` for WCNSS IRIS, and required WCNSS kernel options are checked before rootfs generation.
 
 ## Network ownership
 
 The Debian rootfs uses NetworkManager for `wlan0` Wi-Fi. The Channel RNDIS interface `usb0` is explicitly marked unmanaged by NetworkManager so `channel-usb-gadget` and dnsmasq retain exclusive ownership of the fixed `172.16.42.1/24` USB management network.
+
+## GitHub Actions launchers
+
+Kernel reuse is **off by default**: a normal rootfs run compiles the current
+`SaaSD3v/linux:msm8953/latest`. Select `reuse_kernel` to use a published
+kernel artifact; `kernel_run_id` is only accepted when reuse is enabled.
+
+For `open-root-usb`, choose the dedicated `Build Debian rootfs (USB open root)` workflow exposed on the `main`
+branch. It shows only a reuse checkbox, not SSH key/password fields.
+The regular SSH workflow no longer lists `open-root-usb` as an option.
+GitHub Actions cannot hide workflow_dispatch fields dynamically.
