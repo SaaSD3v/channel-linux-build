@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      reuse_kernel:
+        description: Reuse commit-matched kernel cache (unchecked compiles fresh)
+        required: false
+        type: boolean
+        default: false
       ssh_auth:
         description: SSH authentication mode (open-root-usb = direct root login on USB only)
         required: true
@@ -118,6 +123,7 @@ jobs:
           echo "cache_key=$CACHE_KEY" >> "$GITHUB_OUTPUT"
 
       - name: Restore reusable kernel checkpoint
+        if: ${{ inputs.reuse_kernel == true }}
         id: kernel-cache
         uses: actions/cache/restore@v4
         with:
@@ -223,7 +229,7 @@ jobs:
           echo "KERNEL_RELEASE=$KREL" >> "$GITHUB_ENV"
 
       - name: Save reusable kernel checkpoint
-        if: steps.kernel-cache.outputs.cache-hit != 'true'
+        if: ${{ inputs.reuse_kernel == true && steps.kernel-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: .cache/channel-kernel
