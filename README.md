@@ -8,16 +8,17 @@ All current Channel rootfs builds use one identity only:
 - ext4 label: `rootfs`
 - ext4 UUID: `89530000-6320-4000-8000-000000000001`
 
-The mainline boot image contains a small ARM64 initramfs that searches only for
-that filesystem UUID, mounts it as the real root, and executes `/sbin/init`.
-No root PARTUUID, distro-specific root label, or automatic fallback is used.
+The mainline boot image has **no initramfs**. It mounts Android `userdata`
+directly with `root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b`
+`rootfstype=ext4 rootwait rw`. The ext4 UUID identifies the filesystem; it
+is not the GPT PARTUUID used to locate the root partition.
 
 
 This branch builds a headless Alpine Linux userspace for the Motorola Moto G7 Play (`channel`, Qualcomm SDM632) on the existing mainline kernel/lk2nd boot flow.
 
 ## What changed from `main`
 
-The kernel, Channel DTB, WCN36xx fix, lk2nd, DTBO and Android boot-image layout stay the same. The userspace is Alpine Linux instead of Debian:
+The kernel, Channel DTB with in-tree WCN3620 fix, lk2nd, DTBO and Android boot-image layout stay the same. The userspace is Alpine Linux instead of Debian:
 
 - Alpine 3.24.2 aarch64 minirootfs;
 - OpenRC instead of systemd;
@@ -38,7 +39,7 @@ The rootfs bootstrap verifies the official Alpine minirootfs SHA-256 before extr
 4. the Alpine rootfs with the matching kernel modules;
 5. `boot-channel.img`.
 
-The final rootfs artifact is `rootfs.ext4.zst`. The shared boot image contains a small fixed-UUID initramfs and mounts the Channel root partition with `initramfs lookup of filesystem UUID 89530000-6320-4000-8000-000000000001`; the `rootfs` label is kept only for filesystem identification.
+The final rootfs artifact is `rootfs.ext4.zst`. The shared boot image has no initramfs. It mounts the Android `userdata` partition by fixed GPT PARTUUID, while the `rootfs` label and ext4 UUID identify the filesystem.
 
 ## USB SSH
 
@@ -97,3 +98,14 @@ Project-owned Alpine runtime files live in `rootfs/`:
 ## Storage
 
 The rootfs is a standalone ext4 image labeled `rootfs`. This repository still does not repartition or flash the phone automatically; placement of the ext4 image remains a separate device-side step.
+
+## GitHub Actions launchers
+
+Kernel reuse is **off by default**: a normal rootfs run compiles the current
+`SaaSD3v/linux:msm8953/latest`. Select `reuse_kernel` to use a published
+kernel artifact; `kernel_run_id` is only accepted when reuse is enabled.
+
+For `open-root-usb`, choose the dedicated `Build Alpine rootfs (USB open root)` workflow exposed on the `main`
+branch. It shows only a reuse checkbox, not SSH key/password fields.
+The regular SSH workflow no longer lists `open-root-usb` as an option.
+GitHub Actions cannot hide workflow_dispatch fields dynamically.
