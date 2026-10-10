@@ -2,6 +2,8 @@
 
 Builds do **Motorola Moto G7 Play (SDM632)**: kernel mainline ARM64, rootfs e componentes de boot. Este documento descreve **somente este repositório** e suas branches; Sanders e builds experimentais têm outros guias.
 
+---
+
 ## Builds e branches
 
 | Branch | Função | Workflow |
@@ -17,6 +19,8 @@ Builds do **Motorola Moto G7 Play (SDM632)**: kernel mainline ARM64, rootfs e co
 Os lançadores de componentes aparecem na `main`. Para executar: **Actions → workflow desejado → Run workflow → selecione a branch adequada**. Nos rootfs, `reuse_kernel` e `kernel_run_id` só controlam reutilização de um kernel pronto; sem artefato utilizável o workflow pode compilar o kernel como dependência. Não existe seletor de autenticação SSH.
 
 O `build.yml` integrado também roda em pushes para `main`. Para compilar somente um rootfs, use o `rootfs.yml` da branch da distribuição.
+
+---
 
 ## Arquivos e identidade do Channel
 
@@ -42,6 +46,63 @@ zstd -d -k rootfs.ext4.zst
 
 Confirme também o `build-info.txt`, as versões de kernel/módulos e os checksums publicados.
 
+---
+
+## Preparar imagem ext4 (raw ou Android sparse) e expandir `/`
+
+Este procedimento é para as **imagens de rootfs ext4**, não para `boot.img`, DTBO, lk2nd ou a imagem do kernel. Faça backup: **`fastboot flash userdata` apaga o conteúdo anterior da partição**. Execute a preparação no **computador**, após extrair o ZIP do artefato do GitHub Actions, se houver.
+
+```sh
+# Exemplo de arquivo deste repositório (troque pela distribuição desejada)
+zstd -d -k rootfs.ext4.zst
+file rootfs.ext4
+```
+
+O resultado de `file` determina o próximo passo:
+
+**Se for ext4 raw** (ex.: `Linux rev 1.0 ext4 filesystem data`), converta para o formato Android sparse antes de gravar:
+
+```sh
+img2simg rootfs.ext4 rootfs-sparse.img
+file rootfs-sparse.img
+fastboot flash userdata rootfs-sparse.img
+```
+
+**Se já for `Android sparse image`**, **não** execute `img2simg` outra vez; grave diretamente:
+
+```sh
+fastboot flash userdata rootfs.ext4
+```
+
+Um fastboot que aceite imagem ext4 raw também pode gravar o arquivo raw diretamente com `fastboot flash userdata rootfs.ext4`; a conversão sparse é útil para compatibilidade e transferência. Para inspecionar uma imagem Android sparse como ext4 raw sem gravar:
+
+```sh
+simg2img rootfs-sparse.img rootfs-extraido.ext4
+```
+
+`zstd`, `file`, `img2simg` e `simg2img` são utilitários **do computador**; em Debian/Ubuntu, os dois últimos normalmente vêm do pacote `android-sdk-libsparse-utils`.
+
+### Expandir o filesystem ext4 até o tamanho da partição
+
+Após iniciar o Linux no aparelho, a imagem pode ter um filesystem menor do que a partição `userdata`. `fastboot` **não** expande automaticamente o ext4 ao tamanho da partição. No **aparelho**, como root:
+
+```sh
+findmnt -n -o SOURCE,FSTYPE /
+lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINTS
+df -h /
+```
+
+No Channel, o boot usa `userdata`, mas confirme o dispositivo efetivamente montado antes de usar `resize2fs`. **Somente se `/` for ext4 e a partição de root tiver espaço não utilizado**, substitua o marcador pelo dispositivo validado acima:
+
+```sh
+resize2fs /dev/PARTICAO_ROOT_CONFIRMADA
+df -h /
+```
+
+Sem parâmetro de tamanho, `resize2fs` expande o ext4 até o limite da partição existente quando o kernel suporta expansão online. **Não** execute em partição errada, filesystem que não seja ext4 ou imagem Android sparse; **não** use `e2fsck` em `/` montado. Se a expansão online falhar, faça o procedimento de recuperação com o filesystem desmontado, backup e verificação de integridade antes de tentar novamente.
+
+---
+
 ## SSH de desenvolvimento via USB RNDIS
 
 O telefone usa `172.16.42.1/24`; o DHCP USB oferece endereços `172.16.42.2` a `172.16.42.20` ao host. No computador conectado por USB:
@@ -51,6 +112,8 @@ ssh root@172.16.42.1
 ```
 
 `ssh_auth=ssh` é fixo: não há inputs de chave/senha nem credenciais de usuário geradas pelo build. Esse modo concede acesso root a quem conectá-lo; evite computadores não confiáveis. `ListenAddress 172.16.42.1` **não garante**, sozinho, bloqueio de conexões provenientes de outras interfaces: valide no hardware.
+
+---
 
 ## Wi-Fi e Internet com NetworkManager
 
@@ -95,6 +158,8 @@ rc-service networkmanager status
 
 O kernel e seus módulos devem corresponder à **mesma compilação**. Um workflow concluído não substitui a validação de boot, Wi-Fi e USB no celular.
 
+---
+
 ## Data e hora — ajuste manual temporário
 
 Os scripts deste repositório não configuram um serviço NTP personalizado. `TZ` altera apenas a **apresentação do fuso horário**, não conserta um relógio com data errada. Isso pode afetar TLS/HTTPS, gerenciadores de pacotes e logs.
@@ -108,4 +173,4 @@ date -u
 date
 ```
 
-Sem sincronização automática, o valor pode voltar a ficar incorreto após reiniciar, sobretudo se o RTC estiver errado. Para exibir outro fuso sem alterar o relógio: `TZ=America/Porto_Velho date` (se os dados do fuso estiverem instalados).
+Para conferir a apresentação em UTC, sem alterar o relógio: `TZ=UTC date`.
