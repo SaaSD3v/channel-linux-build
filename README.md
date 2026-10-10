@@ -6,6 +6,8 @@ Workflow: `.github/workflows/dtbo.yml`
 
 Primary artifact: `channel-dtbo`
 
+---
+
 ## Source and target
 
 The workflow clones:
@@ -15,6 +17,8 @@ The workflow clones:
 and builds:
 
 `build/dtbo-motorola-channel.img`
+
+---
 
 ## `channel-dtbo`
 
@@ -28,11 +32,15 @@ It contains:
 
 The commit file is included so a downloaded DTBO can be tied back to the exact source revision used by the run.
 
+---
+
 ## Manual run
 
 Use **Actions → Build channel DTBO → Run workflow** on `main`.
 
 The launcher checks out `dtbo` before building.
+
+---
 
 ## Changes made in this branch
 
