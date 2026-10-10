@@ -185,7 +185,6 @@ jobs:
           test -s out/Image.gz-dtb
           test -s out/kernel.config
           test -s out/kernel-release.txt
-          test -s
           CHANNEL_DTB_FILE="$(find out -maxdepth 1 -type f -name '*channel*.dtb' -print -quit)"
           test -n "$CHANNEL_DTB_FILE"
           test "$(fdtget -t s "$CHANNEL_DTB_FILE" /soc@0/remoteproc@a204000/iris compatible)" = "qcom,wcn3620"
@@ -311,7 +310,6 @@ jobs:
           grep -Fqx "rootfs_label=rootfs" out/build-info.txt
           grep -Eq '^rootfs_uuid=[0-9a-fA-F-]{36}$' out/build-info.txt
           test -s out/source-report.txt
-          test -s
 
           # Rootfs generation validates sshd itself. Confirm the selected mode
           # and fixed USB management address made it into the build metadata.
