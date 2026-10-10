@@ -33,6 +33,25 @@ date -u -s "YYYY-MM-DD HH:MM:SS"
 date
 ```
 
+## Optional Android sparse tools
+
+The rootfs build produces raw ext4. Use these tools only if you need to convert a copy of the image, not as a new flashing step.
+
+Install the sparse tools on Debian if you need them:
+
+```sh
+sudo apt install android-sdk-libsparse-utils
+```
+
+After decompressing `rootfs.ext4.zst`:
+
+```sh
+img2simg rootfs.ext4 rootfs-sparse.img
+simg2img rootfs-sparse.img rootfs-restored.ext4
+```
+
+The first command converts raw to sparse; the second converts sparse back to raw. No conversion is required for the existing lk2nd workflow.
+
 ## Rootfs details
 
 - Artifact: `rootfs`
