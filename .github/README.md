@@ -1,3 +1,3 @@
 # GitHub automation
 
-On the `alpine` branch, the integrated workflow builds the existing Channel kernel/lk2nd/DTBO stack with an Alpine rootfs. Component workflow files remain available for targeted builds.
+The `alpine` branch keeps only the Alpine-specific rootfs workflow; obsolete integrated and duplicate kernel workflows were retired. The validated kernel, boot, DTBO and lk2nd builds remain available through their canonical component branches.
