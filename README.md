@@ -22,7 +22,6 @@ The kernel, Channel DTB, WCN36xx fix, lk2nd, DTBO and Android boot-image layout 
 
 - Alpine 3.24.2 aarch64 minirootfs;
 - OpenRC instead of systemd;
-- `chronyd` instead of `systemd-timesyncd`;
 - Alpine `apk` packages for OpenSSH, `wpa_supplicant`, dnsmasq, networking and utilities;
 - root filesystem label `rootfs`;
 - rootfs artifact `rootfs.ext4.zst`.
@@ -79,7 +78,6 @@ Project-owned Alpine runtime files live in `rootfs/`:
 
 - `etc/init.d/` — Channel hardware/USB OpenRC services; Wi-Fi management itself uses Alpine's packaged `networkmanager` service;
 - `etc/ssh/` — USB-only sshd policy;
-- `etc/chrony/` — NTP configuration;
 - `etc/modprobe.d/` — WCNSS autoload ordering;
 - `usr/local/sbin/` — the USB gadget and Channel WCNSS firmware helpers.
 

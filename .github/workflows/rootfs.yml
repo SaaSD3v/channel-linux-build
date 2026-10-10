@@ -177,7 +177,6 @@ jobs:
           grep -q '^rootfs_uuid=89530000-6320-4000-8000-000000000001$' out/build-info.txt
           grep -q '^distribution=alpine$' out/build-info.txt
           grep -q '^init=openrc$' out/build-info.txt
-          grep -q '^time_sync=chrony$' out/build-info.txt
           sha256sum out/rootfs.ext4.zst \
             out/build-info.txt | tee out/SHA256SUMS.rootfs
 

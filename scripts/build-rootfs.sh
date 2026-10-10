@@ -99,7 +99,6 @@ sudo "$APK_STATIC" \
     dbus dbus-openrc \
     networkmanager networkmanager-openrc networkmanager-cli networkmanager-wifi \
     wpa_supplicant wireless-regdb \
-    chrony \
     openssl
 
 sudo chroot "$ROOTFS" /usr/sbin/update-ca-certificates
@@ -149,7 +148,7 @@ done
 for service in hwdrivers modules sysctl hostname bootmisc syslog localmount; do
   sudo chroot "$ROOTFS" /sbin/rc-update add "$service" boot
 done
-for service in udev-postmount dbus chronyd channel-usb-gadget dnsmasq channel-sshd channel-wifi-firmware networkmanager; do
+for service in udev-postmount dbus channel-usb-gadget dnsmasq channel-sshd channel-wifi-firmware networkmanager; do
   sudo chroot "$ROOTFS" /sbin/rc-update add "$service" default
 done
 
@@ -252,5 +251,4 @@ echo "::endgroup::"
   echo "wifi_runtime_setup=nmcli"
   echo "usb_network_manager=unmanaged"
   echo "wifi_firmware=stock-modem-vendor-readonly"
-  echo "time_sync=chrony"
 } > "$OUT_DIR/build-info.txt"
