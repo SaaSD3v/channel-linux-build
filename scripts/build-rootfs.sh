@@ -173,7 +173,7 @@ grep -Fqx 'wifi.backend=wpa_supplicant' "$ROOTFS/etc/NetworkManager/conf.d/10-ch
 
 # This image is intentionally headless. Alpine's init spawns gettys from
 # /etc/inittab, independently of OpenRC runlevel links. Remove both forms so
-# open-root-usb cannot expose the empty root password on a local/serial console.
+# USB SSH must not expose the empty Unix root password on a local/serial console.
 sudo sed -i -E '/::(respawn|askfirst):.*(a?getty)/d' "$ROOTFS/etc/inittab"
 sudo rm -f "$ROOTFS"/etc/runlevels/default/agetty.* "$ROOTFS"/etc/runlevels/default/consolefont 2>/dev/null || true
 if grep -Eq '::(respawn|askfirst):.*(a?getty)' "$ROOTFS/etc/inittab"; then
