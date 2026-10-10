@@ -53,6 +53,25 @@ apk add android-tools-img2simg  # Android sparse converter (community)
 
 The image itself is raw ext4; sparse conversion is not part of the build.
 
+## Optional Android sparse tools
+
+The rootfs build produces raw ext4. Use these tools only if you need to convert a copy of the image, not as a new flashing step.
+
+Install the sparse tools on Alpine (community repository) if you need them:
+
+```sh
+apk add android-tools-img2simg android-tools-simg2img
+```
+
+After decompressing `rootfs.ext4.zst`:
+
+```sh
+img2simg rootfs.ext4 rootfs-sparse.img
+simg2img rootfs-sparse.img rootfs-restored.ext4
+```
+
+The first command converts raw to sparse; the second converts sparse back to raw. No conversion is required for the existing lk2nd workflow.
+
 ## Rootfs details
 
 - Artifact: `rootfs`
