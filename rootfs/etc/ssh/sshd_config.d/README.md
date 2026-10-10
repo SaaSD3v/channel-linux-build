@@ -1,9 +1,5 @@
-# sshd configuration drop-ins
+# Fixed SSH configuration
 
-## `10-channel-usb.conf`
-
-This file is the Channel-specific sshd drop-in.
-
-The baseline configuration binds sshd to the Channel USB network address and defines the default authentication policy used by the existing integrated build.
-
-In the separated `rootfs` workflow, `scripts/build-rootfs.sh` may rewrite this drop-in inside the generated rootfs to match the selected manual authentication mode. The repository copy remains the baseline input.
+`10-channel-usb.conf` binds the project SSH service to the Channel USB
+management address. Root access uses the single fixed `ssh` mode; the rootfs
+builder no longer selects key/password authentication methods.

@@ -1,7 +1,6 @@
-# SSH configuration overlay
+# USB SSH overlay
 
-This directory contains SSH configuration shipped with the generated rootfs.
-
-The active drop-in is under `sshd_config.d/`.
-
-The separated `rootfs` workflow can render the final authentication settings during the build according to the selected `ssh_auth` mode. The repository file provides the project baseline; the generated image contains the effective settings for that run.
+The active drop-in in `sshd_config.d/` defines the fixed USB SSH management
+mode (`ssh`) for root on `172.16.42.1`. No build-time selection or generated
+user credential artifact is supported. Runtime network isolation must be
+verified on the connected device.

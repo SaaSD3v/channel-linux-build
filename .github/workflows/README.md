@@ -14,10 +14,6 @@ Manual launcher for the separated rootfs build. The distro workflow first reuses
 
 Manual launcher for the separated kernel build using `SaaSD3v/linux:msm8953/latest`. Its `boot-channel.img` has no initramfs and mounts `userdata` directly by PARTUUID.
 
-## `kernel-github.yml`
-
-Manual launcher for the direct GitHub-kernel build. It uses the same direct-root PARTUUID boot model and contains no BusyBox/initramfs stage.
-
 ## `dtbo.yml`
 
 Manual launcher for the separated DTBO build. It checks out `dtbo`.
