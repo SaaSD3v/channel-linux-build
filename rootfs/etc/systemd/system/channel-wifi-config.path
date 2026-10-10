@@ -1,9 +1,0 @@
-[Unit]
-Description=Watch for Moto G7 Play Wi-Fi configuration
-
-[Path]
-PathExists=/etc/wpa_supplicant/wpa_supplicant-channel.conf
-Unit=channel-wifi-dhcp-client.service
-
-[Install]
-WantedBy=multi-user.target

@@ -1,21 +1,8 @@
-# Build scripts
+# Kernel-only build helpers
 
-This directory contains the project build helpers used by the workflows.
+`build-kernel.sh` configures, builds and validates the Channel mainline kernel,
+DTB and matching modules. `build-bootimg.sh` packages the direct-root
+`boot-channel.img` without an initramfs.
 
-## `build-kernel.sh`
-
-Configures and builds the Channel kernel from an already-cloned kernel tree. It merges `config/channel-mainline.config`, verifies required built-in options, builds the kernel/DTBs/modules, and writes the kernel release and selected build outputs to `OUT_DIR`.
-
-The integrated, separated kernel, and rootfs workflows use this helper for kernel configuration and compilation. It applies the validated `wcn3620-fix.patch` and verifies required built-in/module states, including the Channel WCNSS path.
-
-## `build-rootfs.sh`
-
-Creates the Debian Trixie ARM64 rootfs, copies the `rootfs/` overlay, installs the kernel modules, validates the target sshd configuration, generates the initramfs, and produces the compressed ext4 image.
-
-The main and `rootfs` branches use the same selectable SSH authentication implementation. Manual workflows can select key, password, combined, or disabled modes; automatic builds preserve the public-key-first behavior.
-
-## `build-bootimg.sh`
-
-Helper for packing `boot-channel.img` from a built kernel, Channel DTB, and matching initramfs.
-
-The integrated `main` workflow uses this helper as the single boot-image packer and supplies the pinned AOSP `mkbootimg.py`. The helper also writes `kernel-cmdline.txt` so the exact boot command line is published with the artifacts.
+This component branch builds no rootfs or SSH configuration. Userspace builders
+are maintained in the rootfs-specific branches.
