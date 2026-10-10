@@ -16,18 +16,6 @@ The integrated workflow publishes the Debian rootfs, kernel boot image, DTBO and
 
 Kernel source: [SaaSD3v/linux](https://github.com/SaaSD3v/linux), `msm8953/latest`.
 
-## Rootfs image
-
-The workflow produces `rootfs.ext4.zst`, a compressed raw ext4 filesystem. Extract it on the host:
-
-```sh
-zstd -d -k rootfs.ext4.zst
-```
-
-Use your existing lk2nd boot setup to deploy the rootfs.
-
-After boot, check the root filesystem using `findmnt -n -o SOURCE,FSTYPE /` and `df -h /`. Only if the verified root partition is ext4 and has unused space, use `resize2fs` with the confirmed device path.
-
 ## USB SSH
 
 Connect the host to the USB gadget at `172.16.42.1`:
@@ -54,3 +42,13 @@ Set the correct UTC time manually if needed:
 date -u -s "YYYY-MM-DD HH:MM:SS"
 date
 ```
+
+## Rootfs details
+
+| Build | Artifact | Image | Ext4 label |
+| --- | --- | --- | --- |
+| Integrated / Debian | `channel-mainline-debian` | `rootfs.ext4.zst` | `rootfs` |
+| Debian, Ubuntu, Alpine rootfs | `rootfs` | `rootfs.ext4.zst` | `rootfs` |
+
+- Format: ext4 (raw, zstd-compressed)
+- Ext4 UUID: `89530000-6320-4000-8000-000000000001`
