@@ -90,9 +90,8 @@ jobs:
           set -euxo pipefail
           KERNEL_SOURCE_SHA="$(git ls-remote "$KERNEL_URL" "refs/heads/$KERNEL_REF" | awk 'NR==1 {print $1}')"
           test -n "$KERNEL_SOURCE_SHA"
-          CONFIG_SHA="$(sha256sum config/channel-mainline.config | awk '{print $1}')"
           KERNEL_HELPER_SHA="$(sha256sum scripts/build-kernel.sh | awk '{print $1}')"
-          CACHE_KEY="channel-kernel-v4-${RUNNER_OS}-$KERNEL_SOURCE_SHA-$CONFIG_SHA-$KERNEL_HELPER_SHA"
+          CACHE_KEY="channel-kernel-v5-${RUNNER_OS}-$KERNEL_SOURCE_SHA-$KERNEL_HELPER_SHA"
           echo "source_sha=$KERNEL_SOURCE_SHA" >> "$GITHUB_OUTPUT"
           echo "cache_key=$CACHE_KEY" >> "$GITHUB_OUTPUT"
 
