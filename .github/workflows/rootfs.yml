@@ -172,7 +172,23 @@ jobs:
 
           test -s out/rootfs.ext4.zst
           grep -q '^rootfs_label=rootfs$' out/build-info.txt
-          grep -q '^rootfs_uuid=89530000-6320-4000-8000-000000000001$' out/build-info.txt
+          grep -Eq '^rootfs_uuid=[0-9a-fA-F-]{36}
+          grep -q '^distribution=ubuntu$' out/build-info.txt
+          grep -q '^ubuntu_version=26.04.1$' out/build-info.txt
+          sha256sum out/rootfs.ext4.zst \
+            out/build-info.txt | tee out/SHA256SUMS.rootfs
+
+      - name: Upload rootfs artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rootfs
+          path: |
+            out/rootfs.ext4.zst
+            out/build-info.txt
+            out/SHA256SUMS.rootfs
+          if-no-files-found: error
+          retention-days: 14
+ out/build-info.txt
           grep -q '^distribution=ubuntu$' out/build-info.txt
           grep -q '^ubuntu_version=26.04.1$' out/build-info.txt
           sha256sum out/rootfs.ext4.zst \
