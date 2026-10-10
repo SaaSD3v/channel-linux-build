@@ -73,3 +73,7 @@ This grows ext4 into available space on its existing partition. Do not run it ag
 
 - Format: ext4 (raw, zstd-compressed)
 - Ext4 UUID: `89530000-6320-4000-8000-000000000001`
+
+## Portable root filesystem
+
+The boot image uses `root=PARTLABEL=userdata`, and rootfs `/etc/fstab` uses `PARTLABEL=userdata` as well. Images are direct ext4 filesystems (not GPT disk images); each new build gets a random ext4 filesystem UUID, independent of the device's GPT PARTUUID. The ext4 LABEL is only descriptive. Installing Linux to `userdata` replaces the Android data there; inspect the actual partition before writing.
