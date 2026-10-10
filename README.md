@@ -6,6 +6,8 @@ Workflow: `.github/workflows/lk2nd.yml`
 
 Primary artifact: `channel-lk2nd-msm8953`
 
+---
+
 ## Source and target
 
 The workflow uses:
@@ -15,6 +17,8 @@ The workflow uses:
 - target: `lk2nd-msm8953`.
 
 Before upload, the workflow checks the built image for the Channel device strings used by this project.
+
+---
 
 ## `channel-lk2nd-msm8953`
 
@@ -28,11 +32,15 @@ It contains:
 
 The commit file is included so a downloaded image can be tied back to the exact source revision used by the run.
 
+---
+
 ## Manual run
 
 Use **Actions → Build lk2nd MSM8953 → Run workflow** on `main`.
 
 The launcher checks out `lk2nd` before building.
+
+---
 
 ## Changes made in this branch
 
