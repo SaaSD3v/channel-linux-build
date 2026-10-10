@@ -8,18 +8,6 @@ Run `rootfs.yml` on the `alpine` branch to produce the rootfs with matching kern
 
 Output: `rootfs.ext4.zst` (ext4 label: `rootfs`). Boot images are built separately.
 
-## Rootfs image
-
-The workflow produces `rootfs.ext4.zst`, a compressed raw ext4 filesystem. Extract it on the host:
-
-```sh
-zstd -d -k rootfs.ext4.zst
-```
-
-Use your existing lk2nd boot setup to deploy the rootfs.
-
-After boot, check the root filesystem using `findmnt -n -o SOURCE,FSTYPE /` and `df -h /`. Only if the verified root partition is ext4 and has unused space, use `resize2fs` with the confirmed device path.
-
 ## USB SSH
 
 The USB gadget provides `172.16.42.1`:
@@ -46,3 +34,28 @@ Set the correct UTC time manually if needed:
 date -u -s "YYYY-MM-DD HH:MM:SS"
 date
 ```
+
+## Alpine utilities
+
+BusyBox can identify the root mount without `findmnt`:
+
+```sh
+grep ' / ' /proc/mounts
+df -h /```
+
+Optional packages, installed only when needed:
+
+```sh
+apk add e2fsprogs-extra          # resize2fs
+apk add android-tools-img2simg  # Android sparse converter (community)
+```
+
+The image itself is raw ext4; sparse conversion is not part of the build.
+
+## Rootfs details
+
+- Artifact: `rootfs`
+- Image: `rootfs.ext4.zst`
+- Format: ext4 (raw, zstd-compressed)
+- Label: `rootfs`
+- UUID: `89530000-6320-4000-8000-000000000001`
