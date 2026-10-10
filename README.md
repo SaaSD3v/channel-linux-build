@@ -1,236 +1,111 @@
-# Moto G7 Play (channel) — Debian mainline bring-up
+# Channel Linux Build — Moto G7 Play (channel)
 
-## Canonical rootfs identity
+Builds do **Motorola Moto G7 Play (SDM632)**: kernel mainline ARM64, rootfs e componentes de boot. Este documento descreve **somente este repositório** e suas branches; Sanders e builds experimentais têm outros guias.
 
-All current Channel rootfs builds use one identity only:
+## Builds e branches
 
-- file: `rootfs.ext4.zst`
-- ext4 label: `rootfs`
-- ext4 UUID: `89530000-6320-4000-8000-000000000001`
+| Branch | Função | Workflow |
+| --- | --- | --- |
+| `main` | Integrado: kernel + Debian + boot + DTBO + lk2nd | `build.yml` (nome exibido atualmente: **For test only**) |
+| `debian` | Rootfs Debian Trixie e módulos | `rootfs.yml` |
+| `ubuntu` | Rootfs Ubuntu 26.04.1 e módulos | `rootfs.yml` |
+| `alpine` | Rootfs Alpine 3.24, OpenRC e módulos | `rootfs.yml` |
+| `kernel-mainline-7.1` | Kernel, DTB, módulos e boot direto | `kernel-mainline-7.1.yml` |
+| `dtbo` | DTBO Channel | `dtbo.yml` |
+| `lk2nd` | lk2nd MSM8953 | `lk2nd.yml` |
 
-The mainline boot image contains no initramfs. It boots the existing Android `userdata` partition directly with `root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b rootfstype=ext4 rootwait rw`. The ext4 UUID remains fixed inside the distro images, but the GPT PARTUUID of `userdata` is the boot locator.
+Os lançadores de componentes aparecem na `main`. Para executar: **Actions → workflow desejado → Run workflow → selecione a branch adequada**. Nos rootfs, `reuse_kernel` e `kernel_run_id` só controlam reutilização de um kernel pronto; sem artefato utilizável o workflow pode compilar o kernel como dependência. Não existe seletor de autenticação SSH.
 
+O `build.yml` integrado também roda em pushes para `main`. Para compilar somente um rootfs, use o `rootfs.yml` da branch da distribuição.
 
-Build repository for the Motorola Moto G7 Play, codename `channel`, based on Qualcomm SDM632.
+## Arquivos e identidade do Channel
 
-The repository keeps the complete integrated build on `main` and separate component builds for the rootfs, kernel, DTBO, and lk2nd. The separated workflows make it possible to rebuild only one component without removing the complete build flow that has already been used for full-device testing.
+- Kernel: [SaaSD3v/linux](https://github.com/SaaSD3v/linux), `msm8953/latest`; DTB `sdm632-motorola-channel.dtb` com `qcom,wcn3620`.
+- Configuração: `config/channel-mainline.config`; helpers: `scripts/build-kernel.sh`, `scripts/build-rootfs.sh` e, na `main`, `scripts/build-bootimg.sh`.
+- Kernel separado: artefato `channel-kernel-mainline-7.1`, com `boot-channel.img`, DTB, módulos, `System.map` e metadados.
+- Integrado: artefato `channel-mainline-debian` com `rootfs.ext4.zst`, `boot-channel.img`, `lk2nd-msm8953.img`, `dtbo-motorola-channel.img` e checksums.
+- Rootfs separado: artefato `rootfs` com `rootfs.ext4.zst`, `build-info.txt` e `SHA256SUMS.rootfs`.
 
-## Project goals
+O boot é **direto, sem initramfs**, usando a partição Android `userdata`:
 
-The build system produces and validates the files needed for the current Channel Debian mainline bring-up:
-
-- mainline ARM64 kernel for the Channel device tree;
-- matching kernel modules;
-- Debian 13 (Trixie) ARM64 rootfs;
-- `boot-channel.img`;
-- lk2nd for MSM8953/SDM632;
-- the minimal Channel DTBO used with lk2nd;
-- the USB RNDIS runtime configuration used by the generated rootfs;
-- source/build metadata and SHA-256 files for generated artifacts.
-
-The repository is organized so the complete build remains available while each major component can also be built independently.
-
-## Repository build layout
-
-| Branch | Purpose | Workflow | Main artifact |
-| --- | --- | --- | --- |
-| `main` | Complete integrated build | `Build Moto G7 Play mainline Debian` | `channel-mainline-debian` |
-| `debian` | Debian rootfs + matching modules | `Build rootfs` | `channel-debian-rootfs` |
-| `kernel-mainline-7.1` | Kernel + DTB + modules + universal boot image | `Build kernel mainline 7.1` | `channel-kernel-mainline-7.1` |
-| `dtbo` | Minimal Channel DTBO | `Build channel DTBO` | `channel-dtbo` |
-| `lk2nd` | lk2nd MSM8953 image | `Build lk2nd MSM8953` | `channel-lk2nd-msm8953` |
-
-The component workflow files are also exposed on the default `main` branch so GitHub Actions shows their manual **Run workflow** controls. Those manual launchers check out the corresponding component branch before building.
-
-## Complete integrated build on `main`
-
-The integrated workflow is `.github/workflows/build.yml`.
-
-A single run performs the complete build sequence:
-
-1. validates the repository build scripts;
-2. installs the complete build dependency set;
-3. resolves or restores the reusable kernel checkpoint;
-4. discovers the kernel source branch that contains the Channel DTS;
-5. configures and builds the kernel, DTBs, and modules;
-6. builds lk2nd for `lk2nd-msm8953`;
-7. builds the minimal Channel DTBO;
-8. builds the Debian rootfs with the matching kernel modules;
-9. packs the fixed-rootfs `boot-channel.img`;
-10. performs the final static checks;
-11. publishes the build artifacts; SSH user credentials are not generated.
-
-This integrated workflow remains the full-build path. The separated workflows do not replace it.
-
-## Integrated build artifacts
-
-### `channel-mainline-debian`
-
-The main artifact is retained for 14 days.
-
-It contains:
-
-- `boot-channel.img` — direct-root boot image packed from the kernel/DTB with no ramdisk; it locates Android `userdata` by its fixed GPT PARTUUID;
-- `lk2nd-msm8953.img` — lk2nd image compiled for the target used by Channel;
-- `dtbo-motorola-channel.img` — minimal DTBO generated for the lk2nd Channel flow;
-- `Image.gz` — compressed ARM64 kernel image;
-- `Image.gz-dtb` — kernel image concatenated with the compiled Channel DTB;
-- `*.dtb` — compiled Channel device tree;
-- `rootfs.ext4.zst` — compressed Debian ext4 rootfs image;
-- `kernel-modules-*.tar.zst` — modules matching the built kernel;
-- `kernel.config` — final integrated kernel configuration;
-- `System.map` — symbol map for the built kernel;
-- `kernel-release.txt` — exact kernel release string;
-- `source-report.txt` — selected kernel source/ref and build review information;
-- `lk2nd-commit.txt` — exact lk2nd commit used by the run;
-- `dtbo-lk2nd-commit.txt` — exact DTBO source commit used by the run;
-- `build-info.txt` — metadata written while building the rootfs;
-- `SHA256SUMS*` — hashes generated by the workflow.
-
-## Separated rootfs build
-
-The `debian` branch generates the Debian rootfs with the matching kernel modules independently.
-
-It compiles a kernel internally because the rootfs needs the matching kernel release and module tree, but it publishes only the rootfs-related outputs as its main artifact.
-
-SSH management is fixed as `ssh`. There are no SSH authentication inputs in the
-manual workflow dispatch and no user password/key artifacts to download.
-The generated rootfs binds sshd to the USB RNDIS address `172.16.42.1`;
-the intended connection is `ssh root@172.16.42.1` from a USB-connected host.
-Unix root credentials are kept non-empty for local/serial login on PAM-based
-images. Network isolation and passwordless login require validation on hardware.
-
-## Kernel build
-
-The project kernel source is:
-
-`https://github.com/SaaSD3v/linux.git (branch `msm8953/latest`)`
-
-The integrated `main` workflow clones `SaaSD3v/linux` at `msm8953/latest` and uses the same `scripts/build-kernel.sh` helper as the component builds. The WCN3620 fix is already part of that kernel tree; no local patch is applied. The resulting DTB is still rejected unless the WCNSS IRIS compatible is `qcom,wcn3620`.
-
-The project-specific configuration fragment is:
-
-`config/channel-mainline.config`
-
-The fragment also pins the validated WCNSS path explicitly: WCN36XX, WCNSS PIL/control, Qualcomm SMD/SMEM/SMP2P/SMSM, cfg80211 and mac80211. The build helper verifies their final built-in/module states so an upstream defconfig change cannot silently remove Channel Wi-Fi support.
-
-It is merged on top of the ARM64 defconfig and carries the storage, USB gadget, RNDIS, networking, and bring-up options required by the current build. Initramfs support remains enabled in the kernel for compatibility, but the normal Channel boot path no longer uses one.
-
-The integrated and separated kernel builds use the same validated Channel kernel tree without a local Wi-Fi patch. The separated kernel build publishes the kernel image, Channel DTB, combined kernel+DTB image, matching modules, configuration, release string, source revision, `System.map`, the applied patch, hashes, and the same fixed-rootfs `boot-channel.img` used by the integrated build.
-
-## lk2nd
-
-The build uses the upstream lk2nd repository:
-
-`https://github.com/msm8916-mainline/lk2nd.git`
-
-Current reference:
-
-`23.1`
-
-Build target:
-
-`lk2nd-msm8953`
-
-The build validates that the generated image contains the Channel device references before publishing it.
-
-The earlier separated lk2nd workflow initially missed the DT compiler dependency. That workflow was corrected by restoring `device-tree-compiler` and `libfdt-dev`, matching the dependency set already present in the integrated build.
-
-## Channel DTBO
-
-The minimal DTBO is built from:
-
-`https://github.com/barni2000/dtbo-lk2nd.git`
-
-Target output:
-
-`dtbo-motorola-channel.img`
-
-The separated DTBO artifact also contains the exact source commit and SHA-256 hash so the downloaded image can be traced back to the revision used by the run.
-
-## Debian rootfs
-
-The generated rootfs is Debian 13 (Trixie) ARM64.
-
-The build creates an ext4 image with label:
-
-`rootfs`
-
-The integrated boot command line mounts the fixed Channel root partition by GPT filesystem UUID `89530000-6320-4000-8000-000000000001` and waits for storage before mounting it.
-
-The rootfs build installs the matching kernel modules, applies the repository overlay under `rootfs/`, validates the target sshd configuration, and then creates the compressed ext4 image. It does not generate an initramfs.
-
-
-### First Wi-Fi connection
-
-The image contains the Channel WCNSS firmware setup, `wcn36xx`, NetworkManager,
-the `wpa_supplicant` Wi-Fi backend, wireless regulatory data, and time
-synchronization. The hardware-specific firmware service runs before
-NetworkManager; NetworkManager then owns `wlan0`, DHCP, routes, and DNS.
-
-List networks and connect with the standard NetworkManager CLI:
-
-```sh
-nmcli dev wifi list
-nmcli dev wifi connect "<network-name>" password "<password>"
+```text
+root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b rootfstype=ext4 rootwait rw
 ```
 
-NetworkManager stores the connection profile and can reconnect on later boots.
-No Channel-specific supplicant, Wi-Fi DHCP client, config watcher, or udhcpc
-hook is used. NetworkManager owns `wlan0`; `usb0` is explicitly unmanaged so
-the Channel RNDIS helper retains `172.16.42.1/24` without a competing network manager.
+Os rootfs desse repositório usam label ext4 `rootfs` e UUID de filesystem `89530000-6320-4000-8000-000000000001`. **PARTUUID da partição GPT não é UUID do filesystem ext4.** Verifique a partição do aparelho antes de gravar imagens; o build não reparticiona o telefone.
 
-## USB network configuration
+Para descompactar um artefato no computador, após baixá-lo do Actions:
 
-The generated rootfs uses the Channel configfs gadget helper stored at:
+```sh
+zstd -d -k rootfs.ext4.zst
+```
 
-`rootfs/usr/local/sbin/channel-usb-gadget`
+Confirme também o `build-info.txt`, as versões de kernel/módulos e os checksums publicados.
 
-The current runtime configuration creates a single RNDIS function and includes Microsoft OS descriptors.
+## SSH de desenvolvimento via USB RNDIS
 
-The device-side address is:
+O telefone usa `172.16.42.1/24`; o DHCP USB oferece endereços `172.16.42.2` a `172.16.42.20` ao host. No computador conectado por USB:
 
-`172.16.42.1/24`
+```sh
+ssh root@172.16.42.1
+```
 
-The DHCP service provides host addresses from:
+`ssh_auth=ssh` é fixo: não há inputs de chave/senha nem credenciais de usuário geradas pelo build. Esse modo concede acesso root a quem conectá-lo; evite computadores não confiáveis. `ListenAddress 172.16.42.1` **não garante**, sozinho, bloqueio de conexões provenientes de outras interfaces: valide no hardware.
 
-`172.16.42.2` through `172.16.42.20`
+## Wi-Fi e Internet com NetworkManager
 
-The related files are kept under:
+Debian, Ubuntu e Alpine do **channel-linux-build** incluem NetworkManager, firmware WCNSS e suporte à interface `wlan0`. O `usb0` deve permanecer fora do controle do NetworkManager para preservar o gadget USB.
 
-- `rootfs/usr/local/sbin/`;
-- `rootfs/etc/systemd/system/`;
-- `rootfs/etc/ssh/`.
+Execute no **shell do telefone**, por SSH:
 
-Each of those directories now contains its own README describing the files maintained there.
+```sh
+# Verificar interfaces e o gerenciador
+ip -br link
+nmcli general status
+nmcli device status
 
-## Storage and boot model
+# Escanear redes próximas
+nmcli radio wifi on
+nmcli device wifi rescan ifname wlan0
+nmcli -f IN-USE,SSID,SIGNAL,SECURITY device wifi list ifname wlan0
 
-The generated rootfs is a standalone ext4 image labeled `rootfs`.
+# Conectar: solicita a senha sem escrevê-la no histórico
+nmcli --ask device wifi connect "NOME_DA_REDE" ifname wlan0
 
-The filesystem label is retained for identification, but the boot image does not depend on it. `scripts/build-bootimg.sh` points the kernel directly at the existing Android `userdata` GPT partition by PARTUUID, so Debian, Alpine, or Ubuntu can be flashed into that same partition with matching kernel modules without an initramfs.
+# Conferir conexão e acesso à Internet
+nmcli connection show --active
+ip -4 address show dev wlan0
+ip route
+getent hosts debian.org
+ping -c 3 1.1.1.1
+```
 
-The repository does not perform an automatic device repartitioning step. Storage placement and flashing remain separate from the build itself.
+Alternativa menos privada: `nmcli device wifi connect "NOME_DA_REDE" password "SENHA" ifname wlan0`, que pode deixar a senha no histórico. Para um perfil salvo: `nmcli connection up "NOME_DA_CONEXAO"`.
 
-## Repository directories
+Se `wlan0` não aparecer, confira firmware/módulo `wcn36xx` e o serviço de rede:
 
-The repository now includes local documentation in each relevant directory:
+```sh
+# Debian / Ubuntu (systemd)
+systemctl status NetworkManager --no-pager
+journalctl -b -u NetworkManager --no-pager -n 80
 
-- `.github/` — GitHub automation overview;
-- `.github/workflows/` — workflow-specific documentation;
-- `config/` — kernel configuration fragment documentation;
-- `scripts/` — build helper documentation;
-- `rootfs/` — generated-rootfs overlay documentation;
-- nested `rootfs/etc/`, `rootfs/usr/`, systemd, sshd, and helper directories — documentation for the files stored at each level.
+# Alpine (OpenRC)
+rc-service networkmanager status
+```
 
-These directory READMEs complement this main project README; they are not intended to replace it.
+O kernel e seus módulos devem corresponder à **mesma compilação**. Um workflow concluído não substitui a validação de boot, Wi-Fi e USB no celular.
 
-## Recent changes
+## Data e hora — ajuste manual temporário
 
-The repository is organized so the complete build remains on `main` while Debian rootfs, kernel, DTBO, and lk2nd can also be built independently.
+Os scripts deste repositório não configuram um serviço NTP personalizado. `TZ` altera apenas a **apresentação do fuso horário**, não conserta um relógio com data errada. Isso pode afetar TLS/HTTPS, gerenciadores de pacotes e logs.
 
-Rootfs workflows use only fixed USB SSH management (`ssh`) and expose no SSH authentication inputs. The kernel-only workflow remains independent of userspace.
+No **telefone**, como root, utilize a **data e hora UTC atuais**. O valor abaixo é **ilustrativo**: substitua-o antes de executar.
 
-The component workflows are also exposed from `main` as manual launchers, and the kernel launcher now mirrors the specialized branch's Wi-Fi validation and patch provenance checks.
+```sh
+date -u
+date -u -s "2026-10-10 12:00:00"   # EXEMPLO; insira a data/hora UTC real
+date -u
+date
+```
 
-Documentation was expanded across the repository. The main README remains the project overview, while per-directory READMEs document the purpose of the files stored in each folder.
+Sem sincronização automática, o valor pode voltar a ficar incorreto após reiniciar, sobretudo se o RTC estiver errado. Para exibir outro fuso sem alterar o relógio: `TZ=America/Porto_Velho date` (se os dados do fuso estiverem instalados).
