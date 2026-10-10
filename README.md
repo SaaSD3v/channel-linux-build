@@ -6,6 +6,8 @@ Workflow: `.github/workflows/kernel-mainline-7.1.yml`
 
 Primary artifact: `channel-kernel-mainline-7.1`
 
+---
+
 ## Source and build
 
 The workflow clones `https://github.com/SaaSD3v/linux.git` at
@@ -22,6 +24,8 @@ survives DTB compilation; it does not apply a local `wcn3620-fix.patch`.
 The config fragment retains the Channel WCN36XX/WCNSS kernel requirements,
 and `scripts/build-kernel.sh` verifies expected built-in/module states.
 Source commit and build information are recorded with the artifacts.
+
+---
 
 ## `channel-kernel-mainline-7.1`
 
@@ -42,11 +46,15 @@ It contains:
 - `source-report.txt` — source URL/ref/commit details captured by the workflow;
 - `SHA256SUMS` — hashes for the main generated outputs.
 
+---
+
 ## Manual run
 
 Use **Actions → Build kernel mainline 7.1 → Run workflow** on `main`.
 
 The launcher checks out `kernel-mainline-7.1` before building.
+
+---
 
 ## Changes made in this branch
 
