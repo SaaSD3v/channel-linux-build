@@ -41,7 +41,8 @@ BusyBox can identify the root mount without `findmnt`:
 
 ```sh
 grep ' / ' /proc/mounts
-df -h /```
+df -h /
+```
 
 Optional packages, installed only when needed:
 
