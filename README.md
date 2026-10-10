@@ -56,12 +56,19 @@ NetworkManager persists the connection profile for later boots. The old
 Channel-specific supplicant, DHCP-client service, config watcher, and udhcpc
 hook are not used.
 
-## Build
+## Rootfs build
 
-The integrated workflow builds the kernel, modules, lk2nd, Channel DTBO, Ubuntu rootfs and the shared rootfs-independent `boot-channel.img`.
+Use `.github/workflows/rootfs.yml` to build the Ubuntu userspace with matching
+kernel modules. It reuses the kernel checkpoint when possible and otherwise
+builds the matching kernel as an internal dependency. This generates a rootfs
+image, not a new boot image or initramfs.
 
-The default boot cmdline uses:
+The obsolete integrated `build.yml` (which expected a missing initramfs
+builder) was removed from this branch. The validated standalone kernel build
+publishes the direct-root `boot-channel.img` using
+`root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b`.
 
-`root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b rootfstype=ext4 rootwait rw`
-
-The boot image contains no initramfs; the `ubuntu-rootfs` label remains for filesystem identification only. SSH authentication modes from the Debian branch are preserved, including `open-root-usb` for bring-up.
+SSH management uses one fixed mode, `ssh`, without workflow authentication
+inputs or downloadable user credentials. For a host connected over USB, the
+intended connection is `ssh root@172.16.42.1`. Test SSH and network isolation
+on the device before relying on it.

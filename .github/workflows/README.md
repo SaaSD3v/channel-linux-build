@@ -1,11 +1,6 @@
-# GitHub Actions workflows
+# Ubuntu rootfs workflow
 
-## `build.yml`
-
-Integrated `ubuntu` branch build: Channel mainline kernel/modules, lk2nd, DTBO, Ubuntu Minimal rootfs and the rootfs-independent `boot-channel.img`.
-
-## `rootfs.yml`
-
-Manual Ubuntu Minimal rootfs build using a freshly built matching Channel kernel for the module tree; no initramfs is generated.
-
-The other component workflow files retain the existing kernel/DTBO/lk2nd build paths inherited from `main`.
+`rootfs.yml` builds the Ubuntu ARM64 rootfs using matching kernel modules.
+The obsolete integrated and duplicated kernel workflows were removed from
+this branch; use the validated separate mainline kernel build for boot images.
+SSH access uses a single fixed USB mode, without authentication choices.
