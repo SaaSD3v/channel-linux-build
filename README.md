@@ -43,23 +43,26 @@ date -u -s "YYYY-MM-DD HH:MM:SS"
 date
 ```
 
-## Optional Android sparse tools
+## Expand the root filesystem
 
-The rootfs build produces raw ext4. Use these tools only if you need to convert a copy of the image, not as a new flashing step.
-
-| Linux distribution | Install command |
-| --- | --- |
-| Debian / Ubuntu | `sudo apt install android-sdk-libsparse-utils` |
-| Alpine (community repository) | `apk add android-tools-img2simg android-tools-simg2img` |
-
-After decompressing `rootfs.ext4.zst`:
+On the booted device, as root, identify the partition mounted at `/`:
 
 ```sh
-img2simg rootfs.ext4 rootfs-sparse.img
-simg2img rootfs-sparse.img rootfs-restored.ext4
+lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINTS
+grep ' / ' /proc/mounts
+command -v resize2fs
 ```
 
-The first command converts raw to sparse; the second converts sparse back to raw. No conversion is required for the existing lk2nd workflow.
+If `resize2fs` is missing, install `e2fsprogs` on Debian/Ubuntu or `e2fsprogs-extra` on Alpine.
+
+If `/` is ext4, replace the placeholder with **that exact partition**:
+
+```sh
+resize2fs /dev/ROOT_PARTITION
+df -h /
+```
+
+This grows ext4 into available space on its existing partition. Do not run it against a different partition.
 
 ## Rootfs details
 
