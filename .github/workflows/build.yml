@@ -84,6 +84,24 @@ jobs:
           python3 aosp-mkbootimg/mkbootimg.py --help >/dev/null
           python3 aosp-mkbootimg/unpack_bootimg.py --help >/dev/null
 
+      - name: Preflight root boot image before compiling the kernel
+        env:
+          KERNEL_RELEASE: preflight
+          OUT_DIR: ${{ runner.temp }}/channel-boot-preflight
+          KERNEL_IMAGE: ${{ runner.temp }}/channel-boot-preflight/Image.gz
+          CHANNEL_DTB: ${{ runner.temp }}/channel-boot-preflight/channel.dtb
+          MKBOOTIMG_PY: ${{ github.workspace }}/aosp-mkbootimg/mkbootimg.py
+          CHANNEL_ROOT_DEVICE: ${{ env.CHANNEL_ROOT_DEVICE }}
+        run: |
+          set -euxo pipefail
+          mkdir -p "$OUT_DIR"
+          printf 'preflight-kernel\n' > "$KERNEL_IMAGE"
+          printf 'preflight-dtb\n' > "$CHANNEL_DTB"
+          bash scripts/build-bootimg.sh
+          test -s "$OUT_DIR/boot-channel.img"
+          grep -Fq "root=$CHANNEL_ROOT_DEVICE" "$OUT_DIR/kernel-cmdline.txt"
+          grep -Fq 'grep -Fq "root=$CHANNEL_ROOT_DEVICE" out/kernel-cmdline.txt' .github/workflows/build.yml
+
       - name: Resolve reusable kernel checkpoint
         id: kernel-key
         run: |
