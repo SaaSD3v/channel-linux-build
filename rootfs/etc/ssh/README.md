@@ -1,5 +1,5 @@
-# SSH configuration overlay
+# Alpine USB SSH overlay
 
-The Alpine rootfs runs the project-owned `channel-sshd` OpenRC service rather than the stock service. It starts only after the USB RNDIS gadget is ready.
-
-`sshd_config.d/10-channel-usb.conf` binds sshd to `172.16.42.1`. `scripts/build-rootfs.sh` rewrites its authentication directives for the selected build mode.
+The project-owned `channel-sshd` OpenRC service starts after the USB gadget.
+`sshd_config.d/10-channel-usb.conf` is the fixed SSH policy, listening on
+`172.16.42.1`; there is no workflow-selectable authentication mode.

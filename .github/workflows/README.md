@@ -1,11 +1,6 @@
-# GitHub Actions workflows
+# Alpine rootfs workflow
 
-## `build.yml`
-
-Integrated `alpine` branch build: kernel, modules, lk2nd, DTBO, Alpine rootfs, rootfs-independent boot image and final artifacts.
-
-## `rootfs.yml`
-
-Manual Alpine rootfs build for the selected ref. It builds a matching kernel internally so the rootfs receives the correct modules; no initramfs is generated.
-
-The kernel, DTBO and lk2nd component workflows are unchanged because those components are distribution-independent.
+`rootfs.yml` builds the Alpine userspace, installs matching kernel modules and
+publishes rootfs artifacts. USB SSH is fixed, with no authentication controls.
+The obsolete integrated `build.yml` and duplicated legacy kernel workflow have
+been removed from this branch; use the separate validated kernel build.

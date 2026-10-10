@@ -1,3 +1,5 @@
-# sshd drop-ins
+# Fixed Channel SSH configuration
 
-`10-channel-usb.conf` is the baseline Alpine/OpenSSH policy. It restricts sshd to the Channel USB management address. The rootfs builder rewrites authentication settings for the selected key/password/open-root mode and validates the final target configuration with `sshd -t`.
+`10-channel-usb.conf` is the fixed Alpine sshd drop-in, intended for SSH root
+over USB RNDIS. The builder does not select or generate user SSH credentials.
+Validate access and USB-only isolation on the actual device.

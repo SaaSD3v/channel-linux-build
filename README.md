@@ -8,9 +8,10 @@ All current Channel rootfs builds use one identity only:
 - ext4 label: `rootfs`
 - ext4 UUID: `89530000-6320-4000-8000-000000000001`
 
-The mainline boot image contains a small ARM64 initramfs that searches only for
-that filesystem UUID, mounts it as the real root, and executes `/sbin/init`.
-No root PARTUUID, distro-specific root label, or automatic fallback is used.
+The validated Channel kernel boot image has no initramfs. It mounts Android
+`userdata` directly using `root=PARTUUID=76dbdefa-f243-cd22-5da5-9374e6ad318b`
+and `rootfstype=ext4 rootwait rw`. The filesystem UUID above identifies the
+rootfs image, not the boot partition locator.
 
 
 This branch builds a headless Alpine Linux userspace for the Motorola Moto G7 Play (`channel`, Qualcomm SDM632) on the existing mainline kernel/lk2nd boot flow.
@@ -28,17 +29,13 @@ The kernel, Channel DTB, WCN36xx fix, lk2nd, DTBO and Android boot-image layout 
 
 The rootfs bootstrap verifies the official Alpine minirootfs SHA-256 before extracting it.
 
-## Full build
+## Rootfs build
 
-`.github/workflows/build.yml` builds:
-
-1. the Channel mainline kernel and modules;
-2. lk2nd for MSM8953/SDM632;
-3. the minimal Channel DTBO;
-4. the Alpine rootfs with the matching kernel modules;
-5. `boot-channel.img`.
-
-The final rootfs artifact is `rootfs.ext4.zst`. The shared boot image contains a small fixed-UUID initramfs and mounts the Channel root partition with `initramfs lookup of filesystem UUID 89530000-6320-4000-8000-000000000001`; the `rootfs` label is kept only for filesystem identification.
+Use `.github/workflows/rootfs.yml` for the Alpine rootfs. It reuses a matching
+kernel checkpoint where available, or builds the kernel as an internal module
+dependency. The output is `rootfs.ext4.zst`, without a new boot image or
+initramfs. The former integrated `build.yml` and its obsolete initramfs path
+were removed; boot images are provided by the separate mainline kernel build.
 
 ## USB SSH
 
@@ -50,19 +47,11 @@ The USB gadget remains RNDIS with:
 
 OpenRC starts `channel-usb-gadget` first, then Alpine's packaged `dnsmasq` service and `channel-sshd`. The Windows host receives `172.16.42.2`–`172.16.42.20` by DHCP without manual IPv4 configuration.
 
-Manual builds support the existing authentication modes:
-
-- `generated-key`;
-- `public-key-input`;
-- `public-key-secret`;
-- `generated-password`;
-- `password-secret`;
-- `generated-key+generated-password`;
-- `public-key-input+password-secret`;
-- `public-key-secret+password-secret`;
-- `open-root-usb`.
-
-`open-root-usb` enables Alpine/OpenSSH empty-password authentication only on the USB-bound sshd. The Alpine image does not enable a local getty.
+SSH access has one fixed mode, `ssh`, without workflow credential inputs or
+password/key artifacts. The intended command from a USB-connected computer is
+`ssh root@172.16.42.1`. Alpine's OpenSSH in this image has no PAM; the builder
+uses an empty Unix root password for USB SSH and disables local gettys. Treat
+this as a development-only image and confirm isolation from Wi-Fi on hardware.
 
 ## Wi-Fi
 
