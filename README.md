@@ -2,6 +2,8 @@
 
 This branch builds an Ubuntu Minimal userspace for the Motorola Moto G7 Play (`channel`, Qualcomm SDM632) while preserving the validated mainline kernel/lk2nd/DTBO flow from `main`.
 
+---
+
 ## Userspace
 
 The rootfs is based on the official **Ubuntu Base 26.04.1 LTS (Resolute) ARM64** tarball. The build verifies the pinned upstream SHA-256 before extracting it, then installs only the packages required for the headless device:
@@ -19,11 +21,13 @@ No Ubuntu kernel or bootloader package is used. The rootfs receives the Channel 
 
 The generated filesystem is:
 
-`ubuntu-channel-rootfs.ext4.zst`
+`rootfs.ext4.zst`
 
 with filesystem label:
 
 `ubuntu-rootfs`
+
+---
 
 ## USB SSH
 
@@ -35,6 +39,8 @@ The USB behavior intentionally matches the Debian branch:
 - sshd listens only on `172.16.42.1`.
 
 The expected host behavior is automatic DHCP; a manual Windows IPv4 address should not be required.
+
+---
 
 ## Wi-Fi
 
@@ -56,6 +62,8 @@ NetworkManager persists the connection profile for later boots. The old
 Channel-specific supplicant, DHCP-client service, config watcher, and udhcpc
 hook are not used.
 
+---
+
 ## Rootfs build
 
 Use `.github/workflows/rootfs.yml` to build the Ubuntu userspace with matching
@@ -72,3 +80,44 @@ SSH management uses one fixed mode, `ssh`, without workflow authentication
 inputs or downloadable user credentials. For a host connected over USB, the
 intended connection is `ssh root@172.16.42.1`. Test SSH and network isolation
 on the device before relying on it.
+
+---
+
+## Imagem ext4 raw, Android sparse e expansão do `/`
+
+**Somente para o rootfs desta branch.** O workflow gera `rootfs.ext4.zst` (ext4 raw comprimido). Depois de extrair o ZIP do GitHub Actions, no **computador**:
+
+~~~sh
+zstd -d -k rootfs.ext4.zst
+file rootfs.ext4
+~~~
+
+Se o resultado de `file` indicar **ext4 raw**, converta para Android sparse antes de gravar:
+
+~~~sh
+img2simg rootfs.ext4 rootfs-sparse.img
+fastboot flash userdata rootfs-sparse.img
+~~~
+
+Se `file` já indicar **Android sparse image**, não converta novamente: use `fastboot flash userdata rootfs.ext4`. Um fastboot compatível também pode aceitar o arquivo ext4 raw com `fastboot flash userdata rootfs.ext4`. `img2simg` e `simg2img` são utilitários do computador (pacote `android-sdk-libsparse-utils` em Debian/Ubuntu). Para converter sparse para raw: `simg2img rootfs-sparse.img rootfs-extraido.ext4`.
+
+**Atenção:** gravar `userdata` substitui o conteúdo anterior. Valide partições, compatibilidade do boot e backup. O formato sparse **não** expande o filesystem.
+
+### Fazer o ext4 ocupar o espaço disponível na partição
+
+Depois de iniciar o Linux no **telefone**, como root:
+
+~~~sh
+findmnt -n -o SOURCE,FSTYPE /
+lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINTS
+df -h /
+~~~
+
+**Somente se `/` for ext4 e a partição de root for identificada corretamente**, substitua o marcador pelo dispositivo que você confirmou:
+
+~~~sh
+resize2fs /dev/PARTICAO_ROOT_CONFIRMADA
+df -h /
+~~~
+
+Sem tamanho explícito, `resize2fs` expande o ext4 até o limite da partição existente, quando o kernel aceita expansão online. Não execute `e2fsck` no filesystem montado. Se faltar `resize2fs` ou falhar online, use um ambiente de recuperação com filesystem desmontado e backup. Não reparticione o dispositivo somente para ajustar o ext4.
