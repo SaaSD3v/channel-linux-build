@@ -4,27 +4,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      ssh_auth:
-        description: SSH authentication mode (open-root-usb = direct root login on USB only)
-        required: true
-        type: choice
-        default: generated-key
-        options:
-          - generated-key
-          - public-key-input
-          - public-key-secret
-          - generated-password
-          - password-secret
-          - generated-key+generated-password
-          - public-key-input+password-secret
-          - public-key-secret+password-secret
-          - open-root-usb
-      ssh_public_key:
-        description: Public key to install when using a public-key-input mode
-        required: false
-        type: string
-
 permissions:
   contents: read
 
@@ -276,10 +255,6 @@ jobs:
           OUT_DIR: ${{ github.workspace }}/out
           WORK_DIR: ${{ github.workspace }}/.work
           KERNEL_RELEASE: ${{ env.KERNEL_RELEASE }}
-          SSH_AUTH_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.ssh_auth || 'auto' }}
-          SSH_PUBLIC_KEY_INPUT: ${{ inputs.ssh_public_key }}
-          SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
-          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
         run: |
           set -euxo pipefail
           chmod +x scripts/build-rootfs.sh
@@ -341,7 +316,7 @@ jobs:
 
           # Rootfs generation validates sshd itself. Confirm the selected mode
           # and fixed USB management address made it into the build metadata.
-          grep -q '^ssh_auth=' out/build-info.txt
+          grep -Fqx 'ssh_auth=ssh' out/build-info.txt
           grep -q '^usb_device_ip=172.16.42.1$' out/build-info.txt
           grep -q '^wifi_firmware=stock-modem-vendor-readonly$' out/build-info.txt
           grep -q '^time_sync=systemd-timesyncd$' out/build-info.txt
@@ -382,23 +357,3 @@ jobs:
             out/SHA256SUMS*
           if-no-files-found: warn
           retention-days: 14
-
-      - name: Upload generated SSH test key
-        if: always() && hashFiles('out/channel_test_ed25519') != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: channel-ssh-test-key
-          path: |
-            out/channel_test_ed25519
-            out/channel_test_ed25519.pub
-          if-no-files-found: ignore
-          retention-days: 1
-
-      - name: Upload generated SSH password
-        if: always() && hashFiles('out/channel_ssh_password.txt') != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: channel-ssh-password
-          path: out/channel_ssh_password.txt
-          if-no-files-found: ignore
-          retention-days: 1
