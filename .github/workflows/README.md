@@ -1,7 +1,6 @@
-# Rootfs workflow
+# Debian rootfs GitHub Actions
 
-This directory contains `rootfs.yml`, the separated Debian rootfs workflow for the `debian` branch.
-
-It builds the kernel dependency required by the rootfs, runs `scripts/build-rootfs.sh`, publishes the rootfs artifacts without an initramfs, and handles the manual SSH authentication inputs documented in the branch's top-level README.
-
-Pushes to `debian` run this workflow automatically. The copy exposed on `main` is used for manual dispatch.
+`rootfs.yml` builds the Debian rootfs with matching kernel modules, normally
+reusing a validated kernel artifact. It has manual dispatch and push triggers.
+SSH authentication is not selectable: USB SSH is fixed and no user credential
+artifacts are published. Kernel and boot-only workflows are separate.

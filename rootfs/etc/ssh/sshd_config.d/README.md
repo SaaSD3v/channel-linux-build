@@ -1,9 +1,5 @@
-# sshd configuration drop-ins
+# Fixed Channel SSH configuration
 
-## `10-channel-usb.conf`
-
-This file is the Channel-specific sshd drop-in.
-
-The baseline configuration binds sshd to the Channel USB network address and defines the default authentication policy used by the existing integrated build.
-
-In the separated `rootfs` workflow, `scripts/build-rootfs.sh` may rewrite this drop-in inside the generated rootfs to match the selected manual authentication mode. The repository copy remains the baseline input.
+The active `10-channel-usb.conf` drop-in is shipped with the Debian rootfs.
+It defines the project's single USB SSH management mode, with no generated
+user credentials. Validate SSH and USB network isolation on the phone.
