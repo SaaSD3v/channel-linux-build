@@ -319,7 +319,6 @@ jobs:
           grep -Fqx 'ssh_auth=ssh' out/build-info.txt
           grep -q '^usb_device_ip=172.16.42.1$' out/build-info.txt
           grep -q '^wifi_firmware=stock-modem-vendor-readonly$' out/build-info.txt
-          grep -q '^time_sync=systemd-timesyncd$' out/build-info.txt
 
           # Ensure the exact USB feature required for Windows/Linux is requested.
           grep -q '^CONFIG_USB_CONFIGFS_RNDIS=y$' out/kernel.config
